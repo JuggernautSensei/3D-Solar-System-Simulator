@@ -1,0 +1,66 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="01. Main">
+      <UniqueIdentifier>{a2790a1a-643b-4af9-a259-daef66b584d0}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="02. Module">
+      <UniqueIdentifier>{c1360939-d333-40a5-a219-7ee2f8498323}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="main.cpp">
+      <Filter>01. Main</Filter>
+    </ClCompile>
+    <ClCompile Include="src\image_dxt.c">
+      <Filter>02. Module</Filter>
+    </ClCompile>
+    <ClCompile Include="src\image_helper.c">
+      <Filter>02. Module</Filter>
+    </ClCompile>
+    <ClCompile Include="src\soil.c">
+      <Filter>02. Module</Filter>
+    </ClCompile>
+    <ClCompile Include="src\stb_image_aug.c">
+      <Filter>02. Module</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="include\SOIL\image_dxt.h">
+      <Filter>02. Module</Filter>
+    </ClInclude>
+    <ClInclude Include="include\SOIL\image_helper.h">
+      <Filter>02. Module</Filter>
+    </ClInclude>
+    <ClInclude Include="include\SOIL\SOIL.h">
+      <Filter>02. Module</Filter>
+    </ClInclude>
+    <ClInclude Include="include\SOIL\stb_image_aug.h">
+      <Filter>02. Module</Filter>
+    </ClInclude>
+    <ClInclude Include="include\SOIL\stbi_dds_aug.h">
+      <Filter>02. Module</Filter>
+    </ClInclude>
+    <ClInclude Include="include\SOIL\stbi_dds_aug_c.h">
+      <Filter>02. Module</Filter>
+    </ClInclude>
+    <ClInclude Include="..\freetype\include\freetype\otsvg.h">
+      <Filter>02. Module</Filter>
+    </ClInclude>
+    <ClInclude Include="..\freetype\include\freetype\t1tables.h">
+      <Filter>02. Module</Filter>
+    </ClInclude>
+    <ClInclude Include="..\freetype\include\freetype\ttnameid.h">
+      <Filter>02. Module</Filter>
+    </ClInclude>
+    <ClInclude Include="..\freetype\include\freetype\tttables.h">
+      <Filter>02. Module</Filter>
+    </ClInclude>
+    <ClInclude Include="..\freetype\include\freetype\tttags.h">
+      <Filter>02. Module</Filter>
+    </ClInclude>
+    <ClInclude Include="..\imgui-master\imconfig.h">
+      <Filter>02. Module</Filter>
+    </ClInclude>
+  </ItemGroup>
+</Project>

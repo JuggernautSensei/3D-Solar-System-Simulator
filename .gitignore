@@ -1,0 +1,55 @@
+## Visual Studio 임시 파일, 빌드 결과물, 기타 파일
+*.aps
+*.pch
+*.vspscc
+*_i.c
+*_p.c
+*_h.h
+*.ncb
+*.suo
+*.tlb
+*.tlh
+*.bak
+*.cache
+*.ilk
+*.log
+*.lib
+*.sbr
+*.sdf
+*.opensdf
+*.unsuccessfulbuild
+Backup*/
+UpgradeLog*.XML
+_UpgradeReport_Files/
+Generated_Code/
+
+## Visual Studio 프로파일러
+*.psess
+*.vsp
+*.vspx
+
+## 빌드 결과 디렉터리
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+[Bb]in/
+[Oo]bj/
+Build/
+BuildLog.htm
+
+## Visual Studio 사용자 설정 파일 (개인별 설정이므로 공유 X)
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.userprefs
+
+## Visual Studio 캐시/옵션 디렉터리
+.vs/
+
+## 기타 IDE, OS 관련
+*.opendb
+ipch/
+*.VC.db
+*.VC.VC.opendb
