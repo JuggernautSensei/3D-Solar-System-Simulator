@@ -127,9 +127,3 @@ Windows와 C++20을 지원하는 Visual Studio의 C++ 데스크톱 개발 도구
 현재 화면에서는 외행성까지 함께 볼 수 있도록 공전 반지름을 `5 + 4 × log₂(1 + 원본 거리)`로 압축했습니다. 행성의 표시 반지름은 원본의 1.6배로 하고 최소 0.55로 설정했으며, 태양의 표시 반지름은 3을 유지했습니다. 이 조정은 화면에서 작은 천체를 구분하기 위한 것이며, 실제 크기와 거리의 비율을 표현하지 않습니다.
 
 천체 데이터와 텍스처는 기존 과제에서 사용한 값을 유지했습니다. 특히 외행성의 자전 속도는 원본 수치를 그대로 사용하므로 천문학적으로 정확한 시뮬레이터로 볼 수는 없습니다. 토성의 고리는 단순한 원환으로 표현했고, 위성이나 천체 사이에 드리워지는 그림자는 구현하지 않았습니다.
-
-## 참고 자료
-
-- 기존 코드에 기재된 천체 정보 출처: [한국천문연구원 천문우주지식정보](https://astro.kasi.re.kr/learning/pageView/5116)
-- 코드 스타일 참고: [JugX](https://github.com/JuggernautSensei/JugX)
-- 과목·과제 정리 형식 참고: [Digital-Signal-Processing-Study](https://github.com/JuggernautSensei/Digital-Signal-Processing-Study)
