@@ -53,3 +53,4 @@ BuildLog.htm
 ipch/
 *.VC.db
 *.VC.VC.opendb
+vcpkg_installed/

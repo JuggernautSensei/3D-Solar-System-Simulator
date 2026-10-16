@@ -1,397 +1,429 @@
-#include <GL/glut.h>
-#include <GL/glu.h>
-#include <SOIL.h>
-#include <cmath>
-#include <iostream>
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <Windows.h>
+#include <GL/freeglut.h>
+#include <SOIL/SOIL.h>
 #include <algorithm>
-#include <filesystem>
-#include <cassert>
-#include <locale>
-#include <codecvt>
+#include <array>
+#include <cmath>
+#include <cstdlib>
+#include <iostream>
+#include <random>
 #include <string>
-#define DAY_UPDATE_TIME_PER_SEC 60
-using namespace std;
-namespace fs = std::filesystem;
 
-// ¸®¼Ò½º
-#pragma region
+constexpr float kDayUpdateInterval = 1.f / 60.f;
+constexpr float kPi                = 3.14159265358979f;
 
-//¸®¼Ò½º °æ·Î
-wstring resPath = L"";
-
-//ÅÂ¾ç°è ¿­°Å
-enum SOLAR_SYSTEM
-{
-	SUN,
-	MERCURY,
-	VENUS,
-	EARTH,
-	MARS,
-	JUPITER,
-	SATURN,
-	URANUS,
-	NEPTUNE,
-
-	SOLAR_SYSTEM_COUNT
-};
-
-// Áö±¸ Planet
-const float earthRadius = 0.1;
-const float earthDist = 8;
-const float earthOrbitSpd = 1;
+// ì§€êµ¬ Planet
+constexpr float kEarthRadius   = 0.1f;
+constexpr float kEarthDistance = 8.f;
 
 struct Planet
 {
-	wstring path;            //ÅØ½ºÃ³ °æ·Î
-	GLuint  texture;         //ÅØ½ºÃ³
-
-	float planetRadius;      //Çà¼º ¹İÁö¸§
-
-	float planetDist;        //ÅÂ¾çÀ¸·Î ºÎÅÍÀÇ °Å¸®, Áï °øÀü ¹İÁö¸§
-	float rotSpd;            //°øÀü¼Óµµ (Áö±¸ = 1/365)
-	float rotRot;            //°øÀüÃà
-
-	float orbitSpd;          //ÀÚÀü¼Óµµ
-	float orbitRot;          //ÀÚÀüÃà
+    const char* path;              // í…ìŠ¤ì²˜ ê²½ë¡œ
+    GLuint      texture;           // í…ìŠ¤ì²˜
+    float       radius;            // í–‰ì„± ë°˜ì§€ë¦„
+    float       distance;          // íƒœì–‘ìœ¼ë¡œ ë¶€í„°ì˜ ê±°ë¦¬, ì¦‰ ê³µì „ ë°˜ì§€ë¦„
+    float       revolutionSpeed;   // ê³µì „ì†ë„ (ì§€êµ¬ = 1/365)
+    float       revolutionTilt;    // ê³µì „ì¶•
+    float       rotationSpeed;     // ìì „ì†ë„
+    float       rotationTilt;      // ìì „ì¶•
 };
 
-/* Á¤º¸ ÃâÃ³: https://astro.kasi.re.kr/learning/pageView/5116 */
-Planet planets[SOLAR_SYSTEM_COUNT] =
-{
-	/* ÅØ½ºÅÍ °æ·Î, ÅØ½ºÃ³,     Çà¼º ¹İÁö¸§,           °Å¸®,             °øÀü¼Óµµ,      °øÀüÃà,  ÀÚÀü¼Óµµ,        ÀÚÀüÃà*/
-	{ L"Sun.bmp",     0, 30 * earthRadius  ,0                , 0            ,        0   ,  360 / 25.38f     ,7.25}  , //¿ø·¡ ÅÂ¾çÀÇ »çÀÌÁî´Â 109ÀÌÁö¸¸, ³Ê¹« Å« °ü°è·Î 30À¸·Î ÁÙÀÓ
-	{ L"Mercury.bmp", 0, 0.4 * earthRadius  ,0.4 * earthDist  ,  360 / 87.97f,        7   ,  360 / 58.6462f ,0.01}  ,
-	{ L"Venus.bmp",   0, 0.9 * earthRadius  ,0.7 * earthDist  ,  360 / 224.7f ,       3   ,  -360 / 243.0185f ,2.64}  ,
-	{ L"Earth.bmp",   0, 1 * earthRadius    ,1 * earthDist    ,  360 / 365.26,        0   ,  360 / 0.99726963  ,23.44} ,
-	{ L"Mars.bmp",    0, 0.5 * earthRadius  ,1.5 * earthDist  ,  360 / 686.9f ,       1.8 ,  360 / 1.02595676  ,25.19} ,
-	{ L"Jupiter.bmp", 0, 11.2 * earthRadius ,5.2 * earthDist  ,  360 / 4333.29f ,        1.3 ,  360 / 12.6 ,3.12}  ,
-	{ L"Saturn.bmp",  0, 9.4 * earthRadius  ,9.5 * earthDist  ,  360 / 10756.2f ,        2.4 ,  360 / 9.87  ,26.73} ,
-	{ L"Uranos.bmp",  0, 4 * earthRadius    ,19.2 * earthDist ,  360 / 30707.49f   ,        0.7 ,  360 / 2.59 ,82.23} ,
-	{ L"Neptune.bmp", 0, 3.9 * earthRadius  ,30 * earthDist   ,  360 / 60223.35f   ,        1.7 ,  360 / 2.68  ,23.33}
+/* ì •ë³´ ì¶œì²˜: https://astro.kasi.re.kr/learning/pageView/5116 */
+/* í…ìŠ¤í„° ê²½ë¡œ, í…ìŠ¤ì²˜,     í–‰ì„± ë°˜ì§€ë¦„,           ê±°ë¦¬,             ê³µì „ì†ë„,      ê³µì „ì¶•,  ìì „ì†ë„,        ìì „ì¶•*/
+// ì›ë˜ íƒœì–‘ì˜ ì‚¬ì´ì¦ˆëŠ” 109ì´ì§€ë§Œ, ë„ˆë¬´ í° ê´€ê³„ë¡œ 30ìœ¼ë¡œ ì¤„ì„
+std::array g_planets = {
+    Planet {     "Sun.bmp", 0,  30.f * kEarthRadius,                    0.f,               0.f,  0.f,      360.f / 25.38f,  7.25f },
+    Planet { "Mercury.bmp", 0,  0.4f * kEarthRadius,  0.4f * kEarthDistance,    360.f / 87.97f,  7.f,    360.f / 58.6462f,  0.01f },
+    Planet {   "Venus.bmp", 0,  0.9f * kEarthRadius,  0.7f * kEarthDistance,    360.f / 224.7f,  3.f,  -360.f / 243.0185f,  2.64f },
+    Planet {   "Earth.bmp", 0,   1.f * kEarthRadius,   1.f * kEarthDistance,   360.f / 365.26f,  0.f, 360.f / 0.99726963f, 23.44f },
+    Planet {    "Mars.bmp", 0,  0.5f * kEarthRadius,  1.5f * kEarthDistance,    360.f / 686.9f, 1.8f, 360.f / 1.02595676f, 25.19f },
+    Planet { "Jupiter.bmp", 0, 11.2f * kEarthRadius,  5.2f * kEarthDistance,  360.f / 4333.29f, 1.3f,       360.f / 12.6f,  3.12f },
+    Planet {  "Saturn.bmp", 0,  9.4f * kEarthRadius,  9.5f * kEarthDistance,  360.f / 10756.2f, 2.4f,       360.f / 9.87f, 26.73f },
+    Planet {  "Uranos.bmp", 0,   4.f * kEarthRadius, 19.2f * kEarthDistance, 360.f / 30707.49f, 0.7f,       360.f / 2.59f, 82.23f },
+    Planet { "Neptune.bmp", 0,  3.9f * kEarthRadius,  30.f * kEarthDistance, 360.f / 60223.35f, 1.7f,       360.f / 2.68f, 23.33f }
 };
 
-#pragma endregion
-
-// Àü¿ª º¯¼ö
-#pragma region Àü¿ªº¯¼ö
-
-GLfloat xrot = 0.9f, yrot = 0.8f, zrot = 1.0f;
-constexpr float M_PI = 3.14159265358979f;
-
-// Ä«¸Ş¶ó À§Ä¡ ¹× È¸Àü º¯¼ö
-GLfloat cameraX = 0.0f, cameraY = 0.0f, cameraZ = 5.0f;
-GLfloat cameraYaw = 0.0f, cameraPitch = 0.0f;
-
-static LARGE_INTEGER	prevTime;        //ÀÌÀü½Ã°£
-static LARGE_INTEGER	freq;            //Áøµ¿¼ö
-static float			deltaTime;       //´ÜÀ§½Ã°£
-
-int		windowWidth = 1280;
-int		windowHeight = 720;
-int		centerX, centerY;
-int		lastMouseX, lastMouseY;
-bool	firstMouse = true;
-bool	destroyWindow = false;
-float	cameraMoveSpeed = 5;
-
-float	days = 0;
-
-float	timeSum = 0.f;
-float	daySum = 0.05f;
-
-#pragma endregion
-
-// ÇÔ¼ö ¼±¾ğ
-void MyReshape(int w, int h);
-void MyDisplay();
-int LoadGLTextures(SOLAR_SYSTEM idx);
-void ProgramInit(int* argc, char* argv[]);
-void MyTimerUpdate();
-void MyUpdate();
-void InfoRender();
-void MyKeyboardEvent();
-void MyMouseEvent(int x, int y);
-void UpdateCamera();
-void CenterMouse();
-void ResourceInit();
-void ResourceLoader();
-
-void InfoRender()
+struct Star
 {
-	string buffer =
-		"Camera move speed: " + to_string(cameraMoveSpeed) +
-		"\tTime flow per time: " + to_string(daySum * DAY_UPDATE_TIME_PER_SEC) + " day/sec" +
-		"\tCur Time: " + to_string((int)days) + " day";
+    float x;
+    float y;
+    float z;
+    float brightness;
+};
 
-	glutSetWindowTitle(buffer.c_str());
-}
+std::array<Star, 900> g_stars = {};
 
-void MyReshape(int w, int h) {
-	glViewport(0, 0, w, h);
-	glMatrixMode(GL_PROJECTION);
-	glLoadIdentity();
-	gluPerspective(40.0, (GLfloat)w / (GLfloat)h, 0.1, 1000.0);
-	glMatrixMode(GL_MODELVIEW);
-	glLoadIdentity();
-	windowWidth = w;
-	windowHeight = h;
-	centerX = windowWidth / 2;
-	centerY = windowHeight / 2;
-}
-void MyDisplay()
+// ì „ì—­ ë³€ìˆ˜
+// ì¹´ë©”ë¼ ìœ„ì¹˜ ë° íšŒì „ ë³€ìˆ˜
+float g_cameraX         = 0.f;
+float g_cameraY         = -80.f;
+float g_cameraZ         = 72.f;
+float g_cameraYaw       = 0.f;
+float g_cameraPitch     = 48.01f;
+float g_cameraMoveSpeed = 5.f;
+
+LARGE_INTEGER g_prevTime  = {};    // ì´ì „ì‹œê°„
+LARGE_INTEGER g_frequency = {};    // ì§„ë™ìˆ˜
+float         g_deltaTime = 0.f;   // ë‹¨ìœ„ì‹œê°„
+
+int         g_centerX  = 640;
+int         g_centerY  = 360;
+float       g_days     = 1600.f;
+float       g_timeSum  = 0.f;
+float       g_dayStep  = 0.05f;
+GLUquadric* g_pQuadric = nullptr;
+
+void UpdateWindowTitle()
 {
-	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-	glLoadIdentity();
+    const std::string title =
+        "Camera move speed: " + std::to_string(g_cameraMoveSpeed)
+        + " | Time flow: " + std::to_string(g_dayStep / kDayUpdateInterval) + " day/sec"
+        + " | Cur Time: " + std::to_string(static_cast<int>(g_days)) + " day";
 
-	UpdateCamera();
-
-	for (int i = 0; i < SOLAR_SYSTEM_COUNT; ++i)
-	{
-		// °øÀü ±Ëµµ
-		GLUquadric* orbitQuadric = gluNewQuadric();
-		glPushMatrix();
-		glColor3f(1.0f, 1.0f, 1.0f); // White
-		glRotatef(planets[i].rotRot, 0, 1, 0);
-		gluQuadricDrawStyle(orbitQuadric, GLU_FILL);
-		gluDisk(orbitQuadric, planets[i].planetDist - 0.005f, planets[i].planetDist + 0.005f, 100, 10);
-		glPopMatrix();
-		gluDeleteQuadric(orbitQuadric);
-
-		// Çà¼º ±×¸®±â
-		glBindTexture(GL_TEXTURE_2D, planets[i].texture);
-		GLUquadric* quadric = gluNewQuadric();
-		gluQuadricTexture(quadric, GL_TRUE);
-		glPushMatrix();
-
-		// °øÀüÃà
-		glRotatef(planets[i].rotRot, 0, 1, 0);
-
-		// °øÀü
-		glRotatef(planets[i].rotSpd * days, 0, 0, 1);
-
-		// °øÀü ±Ëµµ¿¡ ¹èÄ¡
-		glTranslatef(planets[i].planetDist, 0.0f, 0.0f);
-
-		// ÀÚÀüÃà
-		glRotatef(planets[i].orbitRot, 0, 1, 0);
-
-		// ÀÚÀü
-		glRotatef(planets[i].orbitSpd * days, 0, 0, 1);
-
-		// ÀÚÀüÃà
-		glColor3f(1.0f, 1.0f, 1.0f);
-		glPushMatrix();
-		glBegin(GL_LINES);
-		glVertex3f(0.0f, 0.0f, planets[i].planetRadius + planets[i].planetRadius * 0.3);
-		glVertex3f(0.0f, 0.0f, -planets[i].planetRadius - planets[i].planetRadius * 0.3);
-		glEnd();
-		glPopMatrix();
-
-		// Çà¼º
-		gluSphere(quadric, planets[i].planetRadius, 100, 100);
-
-		glPopMatrix();
-		gluDeleteQuadric(quadric);
-	}
-
-	glutSwapBuffers();
+    glutSetWindowTitle(title.c_str());
 }
 
-void MyTimerUpdate() {
-	LARGE_INTEGER curTime;
-	::QueryPerformanceCounter(&curTime);
-	deltaTime = (float)(curTime.QuadPart - prevTime.QuadPart) / (float)freq.QuadPart;
-	prevTime = curTime;
-
-	/* ÃÊ´ç ´ë·Â 60¹ø ¿¬»ê */
-	timeSum += deltaTime;
-	
-	if (timeSum >= 1/DAY_UPDATE_TIME_PER_SEC)
-	{
-		timeSum = timeSum - 1/DAY_UPDATE_TIME_PER_SEC;
-		days += daySum;
-	}
-}
-
-void MyUpdate()
+void Reshape(
+    const int _width,
+    const int _height)
 {
-	MyTimerUpdate();
-	MyKeyboardEvent();
-	glutPostRedisplay();
-	CenterMouse();
-	InfoRender();
+    glViewport(0, 0, _width, _height);
+    if (_width == 0 || _height == 0)
+    {
+        return;
+    }
+
+    glMatrixMode(GL_PROJECTION);
+    glLoadIdentity();
+    gluPerspective(40.0, static_cast<double>(_width) / _height, 0.1, 1000.0);
+    glMatrixMode(GL_MODELVIEW);
+    glLoadIdentity();
+
+    g_centerX = _width / 2;
+    g_centerY = _height / 2;
 }
 
-void MyKeyboardEvent() {
-	const float moveSpeed = cameraMoveSpeed * deltaTime; // ÀÌµ¿ ¼Óµµ
-
-	// ÀÌµ¿
-	if (GetAsyncKeyState('A')) {
-		cameraX -= moveSpeed * cos(cameraYaw * M_PI / 180.0);
-		cameraZ -= moveSpeed * sin(cameraYaw * M_PI / 180.0);
-	}
-	if (GetAsyncKeyState('D')) {
-		cameraX += moveSpeed * cos(cameraYaw * M_PI / 180.0);
-		cameraZ += moveSpeed * sin(cameraYaw * M_PI / 180.0);
-	}
-	if (GetAsyncKeyState(VK_SPACE)) {
-		cameraY += moveSpeed;
-	}
-	if (GetAsyncKeyState(VK_LSHIFT)) {
-		cameraY -= moveSpeed;
-	}
-
-	// ÀÌµ¿
-	if (GetAsyncKeyState('W')) {
-		cameraX += moveSpeed * sin(cameraYaw * M_PI / 180.0);
-		cameraZ -= moveSpeed * cos(cameraYaw * M_PI / 180.0);
-	}
-	if (GetAsyncKeyState('S')) {
-		cameraX -= moveSpeed * sin(cameraYaw * M_PI / 180.0);
-		cameraZ += moveSpeed * cos(cameraYaw * M_PI / 180.0);
-	}
-
-	// ¼Óµµ Á¶Àı
-	if (GetAsyncKeyState('P'))
-	{
-		cameraMoveSpeed = min(50.f, cameraMoveSpeed + 10 * deltaTime);
-	}
-	if (GetAsyncKeyState('O'))
-	{
-		cameraMoveSpeed = max(0.f, cameraMoveSpeed - 10 * deltaTime);
-	}
-
-	// Á¦ÇÑ °¢µµ
-	cameraPitch = clamp(cameraPitch, -89.0f, 89.0f);
-
-	// ³¯Â¥°¡ Áö³ª´Â Á¤µµ Á¶Àı
-	if (GetAsyncKeyState('L'))
-		daySum = max(0.f, daySum - 0.5f * deltaTime);
-	if (GetAsyncKeyState('K'))
-		daySum = max(0.f, daySum + 0.5f * deltaTime);
-
-	// ÇÁ·Î±×·¥ Á¾·á
-	if (GetAsyncKeyState(VK_ESCAPE))
-	{
-		glutDestroyWindow(glutGetWindow());
-		exit(0);
-	}
-}
-
-void MyMouseEvent(int x, int y) {
-	if (firstMouse) {
-		lastMouseX = centerX;
-		lastMouseY = centerY;
-		firstMouse = false;
-	}
-
-	float xoffset = x - centerX;
-	float yoffset = centerY - y;
-
-	const float sensitivity = 0.1f;
-	xoffset *= sensitivity;
-	yoffset *= sensitivity;
-
-	cameraYaw += xoffset;
-	cameraPitch += yoffset;
-
-	cameraPitch = clamp(cameraPitch, -89.0f, 89.0f);
-}
-
-void UpdateCamera() {
-	GLfloat dirX = sin(cameraYaw * M_PI / 180.0) * cos(cameraPitch * M_PI / 180.0);
-	GLfloat dirY = sin(cameraPitch * M_PI / 180.0);
-	GLfloat dirZ = -cos(cameraYaw * M_PI / 180.0) * cos(cameraPitch * M_PI / 180.0);
-
-	gluLookAt(cameraX, cameraY, cameraZ,
-		cameraX + dirX, cameraY + dirY, cameraZ + dirZ,
-		0.0f, 1.0f, 0.0f);
-}
-
-void CenterMouse() {
-	glutWarpPointer(centerX, centerY);
-}
-
-void ResourceInit()
+void ApplyCamera()
 {
-	//¸®¼Ò½º »ó´ë°æ·Î
-	fs::path path = fs::current_path();
-	path /= "resources\\";
+    const float yaw   = g_cameraYaw * kPi / 180.f;
+    const float pitch = g_cameraPitch * kPi / 180.f;
+    const float dirX  = std::sin(yaw) * std::cos(pitch);
+    const float dirY  = std::sin(pitch);
+    const float dirZ  = -std::cos(yaw) * std::cos(pitch);
 
-	//°æ·Î °áÁ¤
-	resPath = path.c_str();
+    gluLookAt(g_cameraX, g_cameraY, g_cameraZ, g_cameraX + dirX, g_cameraY + dirY, g_cameraZ + dirZ, 0.0, 1.0, 0.0);
 }
 
-void ResourceLoader()
+void Display()
 {
-	for (int i = 0; i < SOLAR_SYSTEM_COUNT; i++)
-		LoadGLTextures((SOLAR_SYSTEM)i);
+    glDepthMask(GL_TRUE);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    glLoadIdentity();
+    ApplyCamera();
+
+    glDisable(GL_LIGHTING);
+    glDisable(GL_TEXTURE_2D);
+    glDepthMask(GL_FALSE);
+    glPointSize(1.5f);
+    glBegin(GL_POINTS);
+    for (const Star& star: g_stars)
+    {
+        glColor3f(star.brightness * 0.8f, star.brightness * 0.88f, star.brightness);
+        glVertex3f(g_cameraX + star.x, g_cameraY + star.y, g_cameraZ + star.z);
+    }
+    glEnd();
+
+    const float yaw        = g_cameraYaw * kPi / 180.f;
+    const float pitch      = g_cameraPitch * kPi / 180.f;
+    const float glowRadius = g_planets.front().radius * 2.5f;
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+    glBegin(GL_TRIANGLE_FAN);
+    glColor4f(1.f, 0.45f, 0.08f, 0.65f);
+    glVertex3f(0.f, 0.f, 0.f);
+    glColor4f(1.f, 0.2f, 0.02f, 0.f);
+    for (int i = 0; i <= 64; ++i)
+    {
+        const float angle = 2.f * kPi * static_cast<float>(i) / 64.f;
+        const float x     = std::cos(angle) * glowRadius;
+        const float y     = std::sin(angle) * glowRadius;
+        glVertex3f(x * std::cos(yaw) - y * std::sin(yaw) * std::sin(pitch),
+                   y * std::cos(pitch),
+                   x * std::sin(yaw) + y * std::cos(yaw) * std::sin(pitch));
+    }
+    glEnd();
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glDepthMask(GL_TRUE);
+
+    const std::array<GLfloat, 4> lightPosition = { 0.f, 0.f, 0.f, 1.f };
+    glLightfv(GL_LIGHT0, GL_POSITION, lightPosition.data());
+
+    for (const Planet& planet: g_planets)
+    {
+        const float radius   = planet.distance > 0.f ? std::max(planet.radius * 1.6f, 0.55f) : planet.radius;
+        const float distance = planet.distance > 0.f ? 5.f + std::log2(1.f + planet.distance) * 4.f : 0.f;
+
+        // ê³µì „ ê¶¤ë„
+        glDisable(GL_LIGHTING);
+        glDisable(GL_TEXTURE_2D);
+        if (planet.distance > 0.f)
+        {
+            glDepthMask(GL_FALSE);
+            glPushMatrix();
+            glColor4f(0.42f, 0.58f, 0.72f, 0.45f);
+            glRotatef(planet.revolutionTilt, 0.f, 1.f, 0.f);
+            glBegin(GL_LINE_LOOP);
+            for (int i = 0; i < 256; ++i)
+            {
+                const float angle = 2.f * kPi * static_cast<float>(i) / 256.f;
+                glVertex3f(distance * std::cos(angle), distance * std::sin(angle), 0.f);
+            }
+            glEnd();
+            glPopMatrix();
+            glDepthMask(GL_TRUE);
+        }
+
+        // í–‰ì„± ê·¸ë¦¬ê¸°
+        glBindTexture(GL_TEXTURE_2D, planet.texture);
+        glPushMatrix();
+
+        // ê³µì „ì¶•
+        glRotatef(planet.revolutionTilt, 0.f, 1.f, 0.f);
+
+        // ê³µì „
+        glRotatef(planet.revolutionSpeed * g_days, 0.f, 0.f, 1.f);
+
+        // ê³µì „ ê¶¤ë„ì— ë°°ì¹˜
+        glTranslatef(distance, 0.f, 0.f);
+
+        // ìì „ì¶•
+        glRotatef(planet.rotationTilt, 0.f, 1.f, 0.f);
+
+        // ìì „
+        glRotatef(planet.rotationSpeed * g_days, 0.f, 0.f, 1.f);
+
+        // ìì „ì¶•
+        glColor4f(0.5f, 0.65f, 0.8f, 0.3f);
+        glBegin(GL_LINES);
+        glVertex3f(0.f, 0.f, radius * 1.3f);
+        glVertex3f(0.f, 0.f, -radius * 1.3f);
+        glEnd();
+
+        // í–‰ì„±
+        glColor4f(1.f, 1.f, 1.f, 1.f);
+        glEnable(GL_TEXTURE_2D);
+        if (planet.distance > 0.f)
+        {
+            glEnable(GL_LIGHTING);
+        }
+        gluSphere(g_pQuadric, radius, 100, 100);
+        if (&planet == &g_planets[6])
+        {
+            glDisable(GL_LIGHTING);
+            glDisable(GL_TEXTURE_2D);
+            glColor4f(0.7f, 0.62f, 0.46f, 0.7f);
+            gluDisk(g_pQuadric, radius * 1.35f, radius * 2.2f, 100, 1);
+        }
+        glPopMatrix();
+    }
+
+    glutSwapBuffers();
 }
 
-int LoadGLTextures(SOLAR_SYSTEM idx)
+void UpdateTime()
 {
-	Planet* p = &planets[idx];
-	wstring path = resPath + p->path;
+    LARGE_INTEGER currentTime;
+    ::QueryPerformanceCounter(&currentTime);
+    g_deltaTime = static_cast<float>(currentTime.QuadPart - g_prevTime.QuadPart)
+                / static_cast<float>(g_frequency.QuadPart);
+    g_prevTime  = currentTime;
 
-	string strpath(path.begin(), path.end());
-
-	glBindTexture(GL_TEXTURE_2D, 0);
-
-	// ÅØ½ºÃ³ ·Îµù
-	p->texture = SOIL_load_OGL_texture(
-		strpath.c_str(),
-		SOIL_LOAD_AUTO,
-		SOIL_CREATE_NEW_ID,
-		SOIL_FLAG_MIPMAPS | SOIL_FLAG_INVERT_Y
-	);
-
-	// ÅØ½ºÃ³ ·Îµù ¿À·ù Ã³¸®
-	if (p->texture == 0) {
-		cerr << "Error loading texture: " << SOIL_last_result() << endl;
-		return FALSE;
-	}
-
-	// ÅØ½ºÃ³ ¸ÅÇÎ ¼³Á¤
-	glBindTexture(GL_TEXTURE_2D, p->texture);
-
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-
-	return TRUE;
+    /* ì´ˆë‹¹ ëŒ€ë ¥ 60ë²ˆ ì—°ì‚° */
+    g_timeSum += g_deltaTime;
+    while (g_timeSum >= kDayUpdateInterval)
+    {
+        g_timeSum -= kDayUpdateInterval;
+        g_days += g_dayStep;
+    }
 }
 
-void ProgramInit(int* argc, char* argv[])
+void ProcessKeyboard()
 {
-	glutInit(argc, argv);
-	glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB | GLUT_DEPTH);
-	glutInitWindowSize(windowWidth, windowHeight);
-	glutCreateWindow("202012007 Ahnjiwoo");
-	glutSetCursor(GLUT_CURSOR_NONE);
+    const float moveSpeed = g_cameraMoveSpeed * g_deltaTime;   // ì´ë™ ì†ë„
+    const float yaw       = g_cameraYaw * kPi / 180.f;
 
-	::QueryPerformanceCounter(&prevTime);
-	::QueryPerformanceFrequency(&freq);
+    // ì´ë™
+    if (::GetAsyncKeyState('A') & 0x8000)
+    {
+        g_cameraX -= moveSpeed * std::cos(yaw);
+        g_cameraZ -= moveSpeed * std::sin(yaw);
+    }
+    if (::GetAsyncKeyState('D') & 0x8000)
+    {
+        g_cameraX += moveSpeed * std::cos(yaw);
+        g_cameraZ += moveSpeed * std::sin(yaw);
+    }
+    if (::GetAsyncKeyState(VK_SPACE) & 0x8000)
+    {
+        g_cameraY += moveSpeed;
+    }
+    if (::GetAsyncKeyState(VK_LSHIFT) & 0x8000)
+    {
+        g_cameraY -= moveSpeed;
+    }
 
-	ResourceInit();
-	ResourceLoader();
+    // ì´ë™
+    if (::GetAsyncKeyState('W') & 0x8000)
+    {
+        g_cameraX += moveSpeed * std::sin(yaw);
+        g_cameraZ -= moveSpeed * std::cos(yaw);
+    }
+    if (::GetAsyncKeyState('S') & 0x8000)
+    {
+        g_cameraX -= moveSpeed * std::sin(yaw);
+        g_cameraZ += moveSpeed * std::cos(yaw);
+    }
+
+    // ì†ë„ ì¡°ì ˆ
+    if (::GetAsyncKeyState('P') & 0x8000)
+    {
+        g_cameraMoveSpeed = std::min(50.f, g_cameraMoveSpeed + 10.f * g_deltaTime);
+    }
+    if (::GetAsyncKeyState('O') & 0x8000)
+    {
+        g_cameraMoveSpeed = std::max(0.f, g_cameraMoveSpeed - 10.f * g_deltaTime);
+    }
+
+    // ë‚ ì§œê°€ ì§€ë‚˜ëŠ” ì •ë„ ì¡°ì ˆ
+    if (::GetAsyncKeyState('L') & 0x8000)
+    {
+        g_dayStep = std::max(0.f, g_dayStep - 0.5f * g_deltaTime);
+    }
+    if (::GetAsyncKeyState('K') & 0x8000)
+    {
+        g_dayStep += 0.5f * g_deltaTime;
+    }
+
+    // í”„ë¡œê·¸ë¨ ì¢…ë£Œ
+    if (::GetAsyncKeyState(VK_ESCAPE) & 0x8000)
+    {
+        glutLeaveMainLoop();
+    }
 }
 
-int main(int argc, char* argv[]) {
-	ProgramInit(&argc, argv);
+void ProcessMouse(
+    const int _x,
+    const int _y)
+{
+    constexpr float kSensitivity = 0.1f;
+    g_cameraYaw += static_cast<float>(_x - g_centerX) * kSensitivity;
+    g_cameraPitch += static_cast<float>(g_centerY - _y) * kSensitivity;
 
-	glutDisplayFunc(MyDisplay);
-	glutReshapeFunc(MyReshape);
-	glutIdleFunc(MyUpdate);
-	glutPassiveMotionFunc(MyMouseEvent);
+    // ì œí•œ ê°ë„
+    g_cameraPitch = std::clamp(g_cameraPitch, -89.f, 89.f);
+}
 
-	glEnable(GL_TEXTURE_2D);
-	glShadeModel(GL_SMOOTH);
-	glClearDepth(1.0);
-	glEnable(GL_DEPTH_TEST);
-	glDepthFunc(GL_LEQUAL);
+void Update()
+{
+    UpdateTime();
+    if (::GetActiveWindow() == ::GetForegroundWindow())
+    {
+        ProcessKeyboard();
+        glutWarpPointer(g_centerX, g_centerY);
+    }
+    glutPostRedisplay();
+    UpdateWindowTitle();
+}
 
-	glutMainLoop();
+bool LoadTextures()
+{
+    for (Planet& planet: g_planets)
+    {
+        // ë¦¬ì†ŒìŠ¤ ìƒëŒ€ê²½ë¡œ
+        const std::string path = std::string { "Resources/" } + planet.path;
 
-	return 0;
+        // í…ìŠ¤ì²˜ ë¡œë”©
+        planet.texture = SOIL_load_OGL_texture(
+            path.c_str(),
+            SOIL_LOAD_AUTO,
+            SOIL_CREATE_NEW_ID,
+            SOIL_FLAG_MIPMAPS | SOIL_FLAG_INVERT_Y);
+
+        // í…ìŠ¤ì²˜ ë¡œë”© ì˜¤ë¥˜ ì²˜ë¦¬
+        if (planet.texture == 0)
+        {
+            std::cerr << "Error loading texture: " << path << ": " << SOIL_last_result() << '\n';
+            return false;
+        }
+
+        // í…ìŠ¤ì²˜ ë§¤í•‘ ì„¤ì •
+        glBindTexture(GL_TEXTURE_2D, planet.texture);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    }
+    return true;
+}
+
+int main(
+    int   _argc,
+    char* _argv[])
+{
+    glutInit(&_argc, _argv);
+    glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB | GLUT_DEPTH | GLUT_MULTISAMPLE);
+    glutInitWindowSize(1280, 720);
+    glutCreateWindow("Solar System");
+    glutSetOption(GLUT_ACTION_ON_WINDOW_CLOSE, GLUT_ACTION_GLUTMAINLOOP_RETURNS);
+    glutSetCursor(GLUT_CURSOR_NONE);
+
+    if (!LoadTextures())
+    {
+        glutDestroyWindow(glutGetWindow());
+        return EXIT_FAILURE;
+    }
+
+    g_pQuadric = gluNewQuadric();
+    if (!g_pQuadric)
+    {
+        std::cerr << "Failed to create GLU quadric.\n";
+        glutDestroyWindow(glutGetWindow());
+        return EXIT_FAILURE;
+    }
+    gluQuadricTexture(g_pQuadric, GL_TRUE);
+
+    std::mt19937                          random { 7 };
+    std::uniform_real_distribution<float> position { -500.f, 500.f };
+    std::uniform_real_distribution<float> brightness { 0.2f, 0.75f };
+    for (Star& star: g_stars)
+    {
+        star = { position(random), position(random), position(random), brightness(random) };
+    }
+
+    ::QueryPerformanceCounter(&g_prevTime);
+    ::QueryPerformanceFrequency(&g_frequency);
+
+    glutDisplayFunc(Display);
+    glutReshapeFunc(Reshape);
+    glutIdleFunc(Update);
+    glutPassiveMotionFunc(ProcessMouse);
+
+    glEnable(GL_TEXTURE_2D);
+    glShadeModel(GL_SMOOTH);
+    glClearDepth(1.0);
+    glEnable(GL_DEPTH_TEST);
+    glDepthFunc(GL_LEQUAL);
+    glClearColor(0.004f, 0.007f, 0.016f, 1.f);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glEnable(GL_LIGHT0);
+    const std::array<GLfloat, 4> ambient  = { 0.12f, 0.14f, 0.2f, 1.f };
+    const std::array<GLfloat, 4> sunlight = { 1.f, 0.94f, 0.84f, 1.f };
+    glLightModelfv(GL_LIGHT_MODEL_AMBIENT, ambient.data());
+    glLightfv(GL_LIGHT0, GL_DIFFUSE, sunlight.data());
+
+    glutMainLoop();
+    gluDeleteQuadric(g_pQuadric);
+    return EXIT_SUCCESS;
 }
