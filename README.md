@@ -4,8 +4,6 @@
 ![OpenGL](https://img.shields.io/badge/OpenGL-Fixed%20Function-5586A4?logo=opengl&logoColor=white)
 ![Platform](https://img.shields.io/badge/Platform-Windows-0078D6)
 
-> 태양과 여덟 행성의 공전·자전을 구현하며 좌표 변환, 텍스처 매핑, 카메라와 원근 투영을 다룬 컴퓨터그래픽스 과제입니다.
-
 ![정리한 태양계 렌더링 화면](Result/SolarSystem.png)
 
 ## 프로젝트 소개
