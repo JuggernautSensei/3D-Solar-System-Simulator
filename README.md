@@ -80,29 +80,28 @@ glRotatef(planet.rotationSpeed * g_days, 0.f, 0.f, 1.f);
 
 ## 실행 방법
 
-Windows와 C++20을 지원하는 Visual Studio의 C++ 데스크톱 개발 도구, CMake 3.21 이상, vcpkg가 필요합니다. freeglut과 SOIL은 [`vcpkg.json`](vcpkg.json)에 지정되어 있으며, CMake 구성 시 설치됩니다.
+Windows의 Visual Studio 2022 17.6 이상(또는 Visual Studio 2026)이 필요합니다. Visual Studio Installer에서 **C++를 사용한 데스크톱 개발** 워크로드를 설치하고, 개별 구성 요소의 **Windows용 C++ CMake 도구**와 **vcpkg 패키지 관리자**가 선택되어 있는지 확인합니다. freeglut과 SOIL은 [`vcpkg.json`](vcpkg.json)에 지정되어 있으며, CMake 구성 시 자동으로 설치됩니다. 빌드 설정은 [`CMakePresets.json`](CMakePresets.json)에 있습니다.
 
-1. 저장소 루트에서 PowerShell을 열고, 설치된 vcpkg의 경로를 지정합니다.
+### Visual Studio에서 실행
 
-   ```powershell
-   $env:VCPKG_ROOT = "C:/vcpkg"
-   cmake -S . -B Build -A x64 "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake"
-   ```
+1. Visual Studio에서 **파일 → 열기 → 폴더**로 저장소 루트를 엽니다. 처음 열 때 vcpkg가 freeglut과 SOIL을 내려받아 빌드하므로 시간이 걸립니다.
+2. 상단 도구 모음의 구성 목록에서 `x64 Debug` 또는 `x64 Release`를 고릅니다.
+3. 시작 항목에서 `SolarSystem.exe`를 고르고 `F5`(디버그) 또는 `Ctrl+F5`(디버그하지 않고 시작)로 실행합니다.
 
-2. Release 구성으로 빌드합니다.
+### 명령줄에서 실행
 
-   ```powershell
-   cmake --build Build --config Release
-   ```
+**Developer PowerShell for VS**를 열고 저장소 루트에서 다음을 실행합니다. 이 셸에는 MSVC 컴파일러와 Ninja, Visual Studio에 포함된 vcpkg의 경로(`VCPKG_ROOT`)가 설정되어 있습니다.
 
-3. 실행 파일이 있는 폴더에서 실행합니다.
+```powershell
+cmake --preset x64-release
+cmake --build --preset x64-release
+Set-Location Build/x64-release
+./SolarSystem.exe
+```
 
-   ```powershell
-   Set-Location Build/Release
-   ./SolarSystem.exe
-   ```
+별도로 설치한 vcpkg를 쓰려면 구성 전에 `$env:VCPKG_ROOT = "C:/vcpkg"`처럼 경로를 지정합니다.
 
-빌드할 때 `Resources/`와 실행에 필요한 freeglut DLL이 실행 파일 옆에 배치됩니다. 텍스처는 실행 시 작업 폴더의 `Resources/`에서 읽으므로,실행 파일과 이 폴더를 함께 두어야 합니다. Visual Studio에서 생성된 `Build/SolarSystem.sln` 또는 `Build/SolarSystem.slnx`를 열고 `SolarSystem`을 시작 프로젝트로 지정해 실행할 수도 있습니다.
+빌드할 때 `Resources/`와 실행에 필요한 freeglut DLL이 실행 파일 옆(`Build/<프리셋 이름>/`)에 배치됩니다. 텍스처는 실행 시 작업 폴더의 `Resources/`에서 읽으므로, 실행 파일과 이 폴더를 함께 두어야 합니다.
 
 ## 저장소 구조
 
@@ -110,6 +109,7 @@ Windows와 C++20을 지원하는 Visual Studio의 C++ 데스크톱 개발 도구
 3D-Solar-System-Simulator/
 ├── main.cpp
 ├── CMakeLists.txt
+├── CMakePresets.json
 ├── vcpkg.json
 ├── Resources/
 │   └── 천체별 BMP 텍스처 9개
