@@ -3,7 +3,7 @@
   "version-string": "1.0.0",
   "builtin-baseline": "07f4812200df3d3c931c0c8a6081d3b21fe2bf9f",
   "dependencies": [
-    "freeglut",
-    "soil"
+    "glew",
+    "stb"
   ]
 }

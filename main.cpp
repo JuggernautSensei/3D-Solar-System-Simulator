@@ -1,8 +1,14 @@
-#define WIN32_LEAN_AND_MEAN
+﻿#define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <Windows.h>
-#include <GL/freeglut.h>
-#include <SOIL/SOIL.h>
+#include <windowsx.h>
+#include <GL/glew.h>
+#include <GL/wglew.h>
+#include <GL/GLU.h>
+#pragma warning(push, 0)
+#define STB_IMAGE_IMPLEMENTATION
+#include <stb_image.h>
+#pragma warning(pop)
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -13,6 +19,12 @@
 
 constexpr float kDayUpdateInterval = 1.f / 60.f;
 constexpr float kPi                = 3.14159265358979f;
+
+// 창
+constexpr int     kWindowWidth      = 1280;
+constexpr int     kWindowHeight     = 720;
+constexpr int     kMultisampleCount = 4;
+constexpr wchar_t kWindowClassName[] = L"SolarSystemWindow";
 
 // 지구 Planet
 constexpr float kEarthRadius   = 0.1f;
@@ -75,6 +87,11 @@ float       g_timeSum  = 0.f;
 float       g_dayStep  = 0.05f;
 GLUquadric* g_pQuadric = nullptr;
 
+// Win32 창 및 OpenGL 컨텍스트
+HWND  g_hWnd  = nullptr;
+HDC   g_hDC   = nullptr;
+HGLRC g_hGLRC = nullptr;
+
 void UpdateWindowTitle()
 {
     const std::string title =
@@ -82,7 +99,7 @@ void UpdateWindowTitle()
         + " | Time flow: " + std::to_string(g_dayStep / kDayUpdateInterval) + " day/sec"
         + " | Cur Time: " + std::to_string(static_cast<int>(g_days)) + " day";
 
-    glutSetWindowTitle(title.c_str());
+    ::SetWindowTextA(g_hWnd, title.c_str());
 }
 
 void Reshape(
@@ -228,7 +245,7 @@ void Display()
         glPopMatrix();
     }
 
-    glutSwapBuffers();
+    ::SwapBuffers(g_hDC);
 }
 
 void UpdateTime()
@@ -308,7 +325,7 @@ void ProcessKeyboard()
     // 프로그램 종료
     if (::GetAsyncKeyState(VK_ESCAPE) & 0x8000)
     {
-        glutLeaveMainLoop();
+        ::PostMessageW(g_hWnd, WM_CLOSE, 0, 0);
     }
 }
 
@@ -330,35 +347,48 @@ void Update()
     if (::GetActiveWindow() == ::GetForegroundWindow())
     {
         ProcessKeyboard();
-        glutWarpPointer(g_centerX, g_centerY);
+
+        // 마우스 커서를 창 중앙으로 고정
+        POINT center = { g_centerX, g_centerY };
+        ::ClientToScreen(g_hWnd, &center);
+        ::SetCursorPos(center.x, center.y);
     }
-    glutPostRedisplay();
     UpdateWindowTitle();
 }
 
 bool LoadTextures()
 {
+    // OpenGL 텍스처 좌표계에 맞게 상하 반전
+    stbi_set_flip_vertically_on_load(true);
+
     for (Planet& planet: g_planets)
     {
         // 리소스 상대경로
         const std::string path = std::string { "Resources/" } + planet.path;
 
-        // 텍스처 로딩
-        planet.texture = SOIL_load_OGL_texture(
-            path.c_str(),
-            SOIL_LOAD_AUTO,
-            SOIL_CREATE_NEW_ID,
-            SOIL_FLAG_MIPMAPS | SOIL_FLAG_INVERT_Y);
+        // 이미지 로딩 (RGBA 4채널 고정)
+        int            width    = 0;
+        int            height   = 0;
+        int            channels = 0;
+        stbi_uc* const pixels   = stbi_load(path.c_str(), &width, &height, &channels, STBI_rgb_alpha);
 
-        // 텍스처 로딩 오류 처리
-        if (planet.texture == 0)
+        // 이미지 로딩 오류 처리
+        if (!pixels)
         {
-            std::cerr << "Error loading texture: " << path << ": " << SOIL_last_result() << '\n';
+            std::cerr << "Error loading texture: " << path << ": " << stbi_failure_reason() << '\n';
             return false;
         }
 
-        // 텍스처 매핑 설정
+        // 텍스처 생성 및 업로드
+        glGenTextures(1, &planet.texture);
         glBindTexture(GL_TEXTURE_2D, planet.texture);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+        stbi_image_free(pixels);
+
+        // 밉맵 생성 (OpenGL 3.0, GLEW로 로드)
+        glGenerateMipmap(GL_TEXTURE_2D);
+
+        // 텍스처 매핑 설정
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
@@ -367,20 +397,202 @@ bool LoadTextures()
     return true;
 }
 
-int main(
-    int   _argc,
-    char* _argv[])
+LRESULT CALLBACK WindowProc(
+    const HWND   _hWnd,
+    const UINT   _message,
+    const WPARAM _wParam,
+    const LPARAM _lParam)
 {
-    glutInit(&_argc, _argv);
-    glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB | GLUT_DEPTH | GLUT_MULTISAMPLE);
-    glutInitWindowSize(1280, 720);
-    glutCreateWindow("Solar System");
-    glutSetOption(GLUT_ACTION_ON_WINDOW_CLOSE, GLUT_ACTION_GLUTMAINLOOP_RETURNS);
-    glutSetCursor(GLUT_CURSOR_NONE);
+    // 픽셀 포맷 탐색용 임시 창은 기본 처리
+    if (_hWnd != g_hWnd)
+    {
+        return ::DefWindowProcW(_hWnd, _message, _wParam, _lParam);
+    }
+
+    switch (_message)
+    {
+    case WM_SIZE:
+        if (g_hGLRC)
+        {
+            Reshape(LOWORD(_lParam), HIWORD(_lParam));
+        }
+        return 0;
+
+    case WM_MOUSEMOVE:
+        ProcessMouse(GET_X_LPARAM(_lParam), GET_Y_LPARAM(_lParam));
+        return 0;
+
+    case WM_SETCURSOR:
+        // 클라이언트 영역에서 커서 숨김
+        if (LOWORD(_lParam) == HTCLIENT)
+        {
+            ::SetCursor(nullptr);
+            return TRUE;
+        }
+        break;
+
+    case WM_ERASEBKGND:
+        return 1;
+
+    case WM_DESTROY:
+        ::wglMakeCurrent(nullptr, nullptr);
+        ::wglDeleteContext(g_hGLRC);
+        ::ReleaseDC(_hWnd, g_hDC);
+        g_hGLRC = nullptr;
+        g_hDC   = nullptr;
+        g_hWnd  = nullptr;
+        ::PostQuitMessage(0);
+        return 0;
+
+    default:
+        break;
+    }
+    return ::DefWindowProcW(_hWnd, _message, _wParam, _lParam);
+}
+
+PIXELFORMATDESCRIPTOR MakePixelFormatDescriptor()
+{
+    PIXELFORMATDESCRIPTOR pfd = {};
+    pfd.nSize                 = sizeof(pfd);
+    pfd.nVersion              = 1;
+    pfd.dwFlags               = PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL | PFD_DOUBLEBUFFER;
+    pfd.iPixelType            = PFD_TYPE_RGBA;
+    pfd.cColorBits            = 32;
+    pfd.cDepthBits            = 24;
+    pfd.iLayerType            = PFD_MAIN_PLANE;
+    return pfd;
+}
+
+// 임시 창과 컨텍스트로 GLEW(WGL 확장)를 초기화해 멀티샘플 픽셀 포맷을 찾는다. 실패 시 0
+int FindMultisamplePixelFormat(const HINSTANCE _hInstance)
+{
+    const HWND hWnd = ::CreateWindowExW(0, kWindowClassName, L"", WS_OVERLAPPEDWINDOW, 0, 0, 1, 1, nullptr, nullptr, _hInstance, nullptr);
+    if (!hWnd)
+    {
+        return 0;
+    }
+
+    const HDC                   hDC    = ::GetDC(hWnd);
+    const PIXELFORMATDESCRIPTOR pfd    = MakePixelFormatDescriptor();
+    int                         format = 0;
+    if (::SetPixelFormat(hDC, ::ChoosePixelFormat(hDC, &pfd), &pfd))
+    {
+        const HGLRC hGLRC = ::wglCreateContext(hDC);
+        if (hGLRC && ::wglMakeCurrent(hDC, hGLRC))
+        {
+            if (glewInit() == GLEW_OK && WGLEW_ARB_pixel_format && WGLEW_ARB_multisample)
+            {
+                const std::array attributes = {
+                    WGL_DRAW_TO_WINDOW_ARB, GL_TRUE,
+                    WGL_SUPPORT_OPENGL_ARB, GL_TRUE,
+                    WGL_DOUBLE_BUFFER_ARB,  GL_TRUE,
+                    WGL_PIXEL_TYPE_ARB,     WGL_TYPE_RGBA_ARB,
+                    WGL_COLOR_BITS_ARB,     32,
+                    WGL_DEPTH_BITS_ARB,     24,
+                    WGL_SAMPLE_BUFFERS_ARB, GL_TRUE,
+                    WGL_SAMPLES_ARB,        kMultisampleCount,
+                    0
+                };
+
+                UINT count = 0;
+                if (!wglChoosePixelFormatARB(hDC, attributes.data(), nullptr, 1, &format, &count) || count == 0)
+                {
+                    format = 0;
+                }
+            }
+            ::wglMakeCurrent(nullptr, nullptr);
+        }
+        if (hGLRC)
+        {
+            ::wglDeleteContext(hGLRC);
+        }
+    }
+
+    ::ReleaseDC(hWnd, hDC);
+    ::DestroyWindow(hWnd);
+    return format;
+}
+
+bool CreateMainWindow(const HINSTANCE _hInstance)
+{
+    WNDCLASSEXW windowClass   = {};
+    windowClass.cbSize        = sizeof(windowClass);
+    windowClass.style         = CS_OWNDC | CS_HREDRAW | CS_VREDRAW;
+    windowClass.lpfnWndProc   = WindowProc;
+    windowClass.hInstance     = _hInstance;
+    windowClass.hCursor       = ::LoadCursor(nullptr, IDC_ARROW);
+    windowClass.lpszClassName = kWindowClassName;
+    if (!::RegisterClassExW(&windowClass))
+    {
+        std::cerr << "Failed to register window class.\n";
+        return false;
+    }
+
+    // 멀티샘플 포맷을 못 찾으면 기본 포맷 사용
+    const int multisampleFormat = FindMultisamplePixelFormat(_hInstance);
+
+    // 클라이언트 영역이 1280x720이 되도록 창 크기 보정
+    RECT rect = { 0, 0, kWindowWidth, kWindowHeight };
+    ::AdjustWindowRect(&rect, WS_OVERLAPPEDWINDOW, FALSE);
+    g_hWnd = ::CreateWindowExW(0, kWindowClassName, L"Solar System", WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT,
+                               rect.right - rect.left, rect.bottom - rect.top, nullptr, nullptr, _hInstance, nullptr);
+    if (!g_hWnd)
+    {
+        std::cerr << "Failed to create window.\n";
+        return false;
+    }
+    g_hDC = ::GetDC(g_hWnd);
+
+    // 픽셀 포맷 설정
+    PIXELFORMATDESCRIPTOR pfd    = MakePixelFormatDescriptor();
+    const int             format = multisampleFormat != 0 ? multisampleFormat : ::ChoosePixelFormat(g_hDC, &pfd);
+    ::DescribePixelFormat(g_hDC, format, sizeof(pfd), &pfd);
+    if (format == 0 || !::SetPixelFormat(g_hDC, format, &pfd))
+    {
+        std::cerr << "Failed to set pixel format.\n";
+        return false;
+    }
+
+    // OpenGL 컨텍스트 생성
+    const HGLRC hGLRC = ::wglCreateContext(g_hDC);
+    if (!hGLRC || !::wglMakeCurrent(g_hDC, hGLRC))
+    {
+        std::cerr << "Failed to create OpenGL context.\n";
+        return false;
+    }
+    g_hGLRC = hGLRC;
+
+    // GLEW 초기화
+    if (const GLenum result = glewInit(); result != GLEW_OK)
+    {
+        std::cerr << "Failed to initialize GLEW: " << glewGetErrorString(result) << '\n';
+        return false;
+    }
+    if (!glGenerateMipmap)
+    {
+        std::cerr << "OpenGL 3.0 or later is required.\n";
+        return false;
+    }
+
+    ::ShowWindow(g_hWnd, SW_SHOW);
+
+    RECT clientRect = {};
+    ::GetClientRect(g_hWnd, &clientRect);
+    Reshape(clientRect.right, clientRect.bottom);
+    return true;
+}
+
+int main()
+{
+    if (!CreateMainWindow(::GetModuleHandleW(nullptr)))
+    {
+        ::DestroyWindow(g_hWnd);
+        return EXIT_FAILURE;
+    }
 
     if (!LoadTextures())
     {
-        glutDestroyWindow(glutGetWindow());
+        ::DestroyWindow(g_hWnd);
         return EXIT_FAILURE;
     }
 
@@ -388,7 +600,7 @@ int main(
     if (!g_pQuadric)
     {
         std::cerr << "Failed to create GLU quadric.\n";
-        glutDestroyWindow(glutGetWindow());
+        ::DestroyWindow(g_hWnd);
         return EXIT_FAILURE;
     }
     gluQuadricTexture(g_pQuadric, GL_TRUE);
@@ -404,11 +616,6 @@ int main(
     ::QueryPerformanceCounter(&g_prevTime);
     ::QueryPerformanceFrequency(&g_frequency);
 
-    glutDisplayFunc(Display);
-    glutReshapeFunc(Reshape);
-    glutIdleFunc(Update);
-    glutPassiveMotionFunc(ProcessMouse);
-
     glEnable(GL_TEXTURE_2D);
     glShadeModel(GL_SMOOTH);
     glClearDepth(1.0);
@@ -423,7 +630,29 @@ int main(
     glLightModelfv(GL_LIGHT_MODEL_AMBIENT, ambient.data());
     glLightfv(GL_LIGHT0, GL_DIFFUSE, sunlight.data());
 
-    glutMainLoop();
+    // 메시지 루프: 대기 메시지를 처리한 뒤 매 프레임 갱신 및 렌더링
+    bool isRunning = true;
+    while (isRunning)
+    {
+        MSG message = {};
+        while (::PeekMessageW(&message, nullptr, 0, 0, PM_REMOVE))
+        {
+            if (message.message == WM_QUIT)
+            {
+                isRunning = false;
+                break;
+            }
+            ::TranslateMessage(&message);
+            ::DispatchMessageW(&message);
+        }
+
+        if (isRunning)
+        {
+            Update();
+            Display();
+        }
+    }
+
     gluDeleteQuadric(g_pQuadric);
     return EXIT_SUCCESS;
 }
