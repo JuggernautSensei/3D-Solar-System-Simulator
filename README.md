@@ -80,17 +80,32 @@ glRotatef(planet.rotationSpeed * g_days, 0.f, 0.f, 1.f);
 
 ## 실행 방법
 
-Windows의 Visual Studio 2022 17.6 이상(또는 Visual Studio 2026)이 필요합니다. Visual Studio Installer에서 **C++를 사용한 데스크톱 개발** 워크로드를 설치하고, 개별 구성 요소의 **Windows용 C++ CMake 도구**와 **vcpkg 패키지 관리자**가 선택되어 있는지 확인합니다. freeglut과 SOIL은 [`vcpkg.json`](vcpkg.json)에 지정되어 있으며, CMake 구성 시 자동으로 설치됩니다. 빌드 설정은 [`CMakePresets.json`](CMakePresets.json)에 있습니다.
+Windows의 Visual Studio 2022 17.6 이상(또는 Visual Studio 2026)이 필요합니다. Visual Studio Installer에서 **C++를 사용한 데스크톱 개발** 워크로드를 설치하고, 개별 구성 요소의 **vcpkg 패키지 관리자**가 선택되어 있는지 확인합니다. freeglut과 SOIL은 [`vcpkg.json`](vcpkg.json)에 지정되어 있으며, 빌드할 때 vcpkg가 자동으로 설치합니다.
 
-### Visual Studio에서 실행
+### Visual Studio 솔루션
 
-1. Visual Studio에서 **파일 → 열기 → 폴더**로 저장소 루트를 엽니다. 처음 열 때 vcpkg가 freeglut과 SOIL을 내려받아 빌드하므로 시간이 걸립니다.
+1. 처음 한 번만 **Developer PowerShell for VS**에서 vcpkg를 Visual Studio와 연결합니다.
+
+   ```powershell
+   vcpkg integrate install
+   ```
+
+2. 저장소 루트의 `SolarSystem.sln`을 엽니다.
+3. 상단에서 `Debug` 또는 `Release`, `x64`를 고르고 `F5`로 빌드·실행합니다. 첫 빌드에서는 vcpkg가 freeglut과 SOIL을 내려받아 빌드하므로 시간이 걸립니다.
+
+실행 파일은 `Bin/x64/<구성>/`에 생성되며, 빌드할 때 `Resources/`와 freeglut DLL이 그 옆에 복사됩니다.
+
+### CMake 프리셋
+
+개별 구성 요소의 **Windows용 C++ CMake 도구**가 추가로 필요합니다. 빌드 설정은 [`CMakePresets.json`](CMakePresets.json)에 있습니다.
+
+Visual Studio에서 사용할 때는 다음 순서로 실행합니다.
+
+1. **파일 → 열기 → 폴더**로 저장소 루트를 엽니다.
 2. 상단 도구 모음의 구성 목록에서 `x64 Debug` 또는 `x64 Release`를 고릅니다.
 3. 시작 항목에서 `SolarSystem.exe`를 고르고 `F5`(디버그) 또는 `Ctrl+F5`(디버그하지 않고 시작)로 실행합니다.
 
-### 명령줄에서 실행
-
-**Developer PowerShell for VS**를 열고 저장소 루트에서 다음을 실행합니다. 이 셸에는 MSVC 컴파일러와 Ninja, Visual Studio에 포함된 vcpkg의 경로(`VCPKG_ROOT`)가 설정되어 있습니다.
+명령줄에서는 **Developer PowerShell for VS**를 열고 저장소 루트에서 다음을 실행합니다. 이 셸에는 MSVC 컴파일러와 Ninja, Visual Studio에 포함된 vcpkg의 경로(`VCPKG_ROOT`)가 설정되어 있습니다.
 
 ```powershell
 cmake --preset x64-release
@@ -99,15 +114,17 @@ Set-Location Build/x64-release
 ./SolarSystem.exe
 ```
 
-별도로 설치한 vcpkg를 쓰려면 구성 전에 `$env:VCPKG_ROOT = "C:/vcpkg"`처럼 경로를 지정합니다.
+별도로 설치한 vcpkg를 쓰려면 구성 전에 `$env:VCPKG_ROOT = "C:/vcpkg"`처럼 경로를 지정합니다. 빌드할 때 `Resources/`와 freeglut DLL이 실행 파일 옆(`Build/<프리셋 이름>/`)에 배치됩니다.
 
-빌드할 때 `Resources/`와 실행에 필요한 freeglut DLL이 실행 파일 옆(`Build/<프리셋 이름>/`)에 배치됩니다. 텍스처는 실행 시 작업 폴더의 `Resources/`에서 읽으므로, 실행 파일과 이 폴더를 함께 두어야 합니다.
+텍스처는 실행 시 작업 폴더의 `Resources/`에서 읽으므로, 실행 파일과 이 폴더를 함께 두어야 합니다.
 
 ## 저장소 구조
 
 ```text
 3D-Solar-System-Simulator/
 ├── main.cpp
+├── SolarSystem.sln
+├── SolarSystem.vcxproj
 ├── CMakeLists.txt
 ├── CMakePresets.json
 ├── vcpkg.json
