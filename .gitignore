@@ -54,3 +54,4 @@ ipch/
 *.VC.db
 *.VC.VC.opendb
 vcpkg_installed/
+CMakeUserPresets.json
