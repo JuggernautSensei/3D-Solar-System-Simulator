@@ -389,8 +389,8 @@ float         g_deltaTime = 0.f;
 
 constexpr float kTimeBoostScale = 3.f;
 
-int   g_centerX       = 640;
-int   g_centerY       = 360;
+int   g_centerX       = kWindowWidth / 2;
+int   g_centerY       = kWindowHeight / 2;
 float g_days          = 1600.f;
 float g_timeSum       = 0.f;
 float g_dayStep       = 0.05f / kTimeBoostScale;

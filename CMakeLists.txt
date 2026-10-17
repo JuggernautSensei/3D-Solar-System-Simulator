@@ -8,7 +8,7 @@ find_package(Stb REQUIRED)
 add_executable(SolarSystem main.cpp)
 target_compile_features(SolarSystem PRIVATE cxx_std_20)
 target_include_directories(SolarSystem PRIVATE ${Stb_INCLUDE_DIR})
-target_link_libraries(SolarSystem PRIVATE OpenGL::GL OpenGL::GLU GLEW::GLEW)
+target_link_libraries(SolarSystem PRIVATE OpenGL::GL GLEW::GLEW)
 target_compile_options(SolarSystem PRIVATE /W4 /utf-8 /permissive-)
 
 set_target_properties(SolarSystem PROPERTIES
