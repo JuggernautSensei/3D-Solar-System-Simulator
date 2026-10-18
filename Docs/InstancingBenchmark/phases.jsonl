@@ -1,0 +1,12 @@
+{"view":"overview","mode":"instanced","run":1,"frames":593,"elapsed_s":8.156654900,"fps":72.701372}
+{"view":"overview","mode":"individual","run":1,"frames":618,"elapsed_s":8.187431900,"fps":75.481544}
+{"view":"overview","mode":"individual","run":2,"frames":616,"elapsed_s":8.261086300,"fps":74.566465}
+{"view":"overview","mode":"instanced","run":2,"frames":557,"elapsed_s":8.297527700,"fps":67.128429}
+{"view":"overview","mode":"instanced","run":3,"frames":780,"elapsed_s":8.225701200,"fps":94.824743}
+{"view":"overview","mode":"individual","run":3,"frames":726,"elapsed_s":8.155009000,"fps":89.025040}
+{"view":"belt","mode":"instanced","run":1,"frames":834,"elapsed_s":8.170487900,"fps":102.074688}
+{"view":"belt","mode":"individual","run":1,"frames":890,"elapsed_s":8.142030600,"fps":109.309341}
+{"view":"belt","mode":"individual","run":2,"frames":833,"elapsed_s":8.146420600,"fps":102.253498}
+{"view":"belt","mode":"instanced","run":2,"frames":783,"elapsed_s":8.166455000,"fps":95.880036}
+{"view":"belt","mode":"instanced","run":3,"frames":745,"elapsed_s":8.165721200,"fps":91.235052}
+{"view":"belt","mode":"individual","run":3,"frames":840,"elapsed_s":8.149771500,"fps":103.070374}

@@ -2,218 +2,155 @@
 
 # 3D Solar System Simulator
 
-**OpenGL 4.6 Core 프로필로 구현한 실시간 태양계 렌더러**
+<p align="center"><img src="Docs/Hero.gif" alt="태양과 여덟 행성, 소행성대가 함께 움직이는 태양계 전체 화면" width="840"></p>
+
+**OpenGL로 구현한 3D 태양계 텀프로젝트**
 
 ![C++20](https://img.shields.io/badge/C%2B%2B-20-00599C?logo=cplusplus&logoColor=white)
-![Windows](https://img.shields.io/badge/Platform-Windows-0078D4?logo=windows&logoColor=white)
-![MSVC](https://img.shields.io/badge/Compiler-MSVC%20v145-5C2D91?logo=visualstudio&logoColor=white)
 ![OpenGL](https://img.shields.io/badge/OpenGL-4.6%20Core-5586A4?logo=opengl&logoColor=white)
-![GLEW](https://img.shields.io/badge/GLEW-2.3-4B8BBE)
-![stb_image](https://img.shields.io/badge/stb__image-2.30-555555)
+![Windows](https://img.shields.io/badge/Platform-Windows-0078D4)
 
 </div>
 
-<p align="center"><img src="Docs/Hero.gif" alt="고정 카메라로 본 태양계. 행성이 공전하고 소행성대가 회전한다" width="840"></p>
+## Contents
+
+- [프로젝트 소개](#프로젝트-소개)
+- [셰이더와 조명](#셰이더와-조명)
+- [깊이 처리와 블렌딩](#깊이-처리와-블렌딩)
+- [노멀 매핑](#노멀-매핑)
+- [인스턴싱](#인스턴싱)
+- [회고](#회고)
 
 <br>
 
-## 개요
+## 프로젝트 소개
 
-Win32 API로 창과 OpenGL 4.6 Core 컨텍스트를 만들고, GLSL 460 셰이더로 태양과 행성 8개, 소행성 4,000개를 그린다. 버퍼·텍스처·VAO는 모두 DSA(Direct State Access) 함수로 만들고, 행렬 연산은 외부 수학 라이브러리 없이 직접 구현했다. 전체 코드는 [`main.cpp`](main.cpp) 한 파일이다.
+컴퓨터그래픽스 강의에서 배운 크기 조절·회전·이동(SRT)과 텍스처링을 실제 장면에 적용해 보기 위해 만든 프로젝트입니다. 같은 구 모양의 물체도 크기와 거리, 회전축과 속도를 달리하면 서로 다른 행성과 움직임으로 표현할 수 있습니다. 이 변환들을 연결해 태양과 여덟 행성의 자전·공전을 구성했습니다.
 
-다룬 기술은 다음과 같다.
+카메라를 움직이면 행성 표면, 토성 고리와 소행성대를 가까이 살펴볼 수 있습니다. 시간 진행 속도를 바꾸면 같은 장면에서 자전과 공전의 속도 차이도 관찰할 수 있습니다. 행성 사이의 거리는 로그 함수로 압축하고 작은 행성에는 최소 크기를 적용했으므로, 화면의 거리와 크기는 실제 태양계의 축척과 다릅니다.
 
-- WGL 확장을 이용한 Core 프로필 컨텍스트와 멀티샘플 픽셀 포맷 생성
-- DSA 기반 불변(immutable) 버퍼·텍스처와 VAO 구성
-- 열 우선 행렬로 구성한 모델·뷰·투영 변환
-- 텍스처 매핑과 밉맵, 픽셀 단위 램버트 조명
-- OBJ 로딩, 탄젠트 공간 계산, 노멀 매핑
-- 인스턴스 버퍼와 정점 셰이더 애니메이션을 이용한 인스턴싱
-- 가산 블렌딩 빌보드, 알파 블렌딩, 깊이 쓰기 제어
+수업에서 배운 내용으로 기본 장면을 만든 뒤, 표면을 밝히는 셰이더 조명과 깊이 처리·블렌딩을 적용했습니다. 소행성대에는 표면의 작은 요철을 표현하는 노멀 매핑과 같은 메시를 여러 개 그리는 인스턴싱을 사용했습니다. 구현은 [`main.cpp`](https://github.com/JuggernautSensei/3D-Solar-System-Simulator/blob/0a35574340bd9a171c0a023fb5215e7f9ac9faf1/main.cpp)에 모여 있습니다.
 
-<br>
+### 변환과 텍스처링
 
-## 1. 컨텍스트 생성
+행성은 위도와 경도를 나누어 만든 하나의 구 메시를 공유합니다. 이 구에 행성마다 다른 크기, 위치와 회전을 적용하고 표면 이미지를 입혔습니다. 구를 한 번만 만들어도 모델 행렬과 텍스처를 바꾸면 태양부터 해왕성까지 표현할 수 있습니다.
 
-Core 프로필 컨텍스트는 `wglCreateContextAttribsARB`로 만든다. 이 함수와 멀티샘플 포맷을 고르는 `wglChoosePixelFormatARB`는 확장 함수라서, 주소를 얻으려면 현재 스레드에 OpenGL 컨텍스트가 이미 연결되어 있어야 한다. 그래서 컨텍스트를 두 번 만든다.
-
-1. 1×1 크기의 숨은 창에 `ChoosePixelFormat` + `wglCreateContext`로 레거시 컨텍스트를 만든다.
-2. `glewInit()`으로 WGL 확장 함수 포인터를 불러온다. `WGL_ARB_pixel_format`, `WGL_ARB_create_context`, `WGL_ARB_create_context_profile`이 없으면 종료한다.
-3. 임시 창과 컨텍스트를 지운다. 창 하나의 픽셀 포맷은 한 번만 지정할 수 있으므로 임시 창은 재사용하지 않는다.
-4. 실제 창에서 `wglChoosePixelFormatARB`로 4x MSAA 포맷을 고른다. 없으면 샘플 수 0으로 다시 고른다.
-5. 4.6 Core 컨텍스트를 만들고, `glewExperimental = GL_TRUE`로 GLEW를 다시 초기화한다.
-
-```cpp
-const std::array contextAttributes = {
-    WGL_CONTEXT_MAJOR_VERSION_ARB, 4,
-    WGL_CONTEXT_MINOR_VERSION_ARB, 6,
-    WGL_CONTEXT_PROFILE_MASK_ARB,  WGL_CONTEXT_CORE_PROFILE_BIT_ARB,
-    WGL_CONTEXT_FLAGS_ARB,         kContextFlags,   // Debug 빌드: WGL_CONTEXT_DEBUG_BIT_ARB
-    0
-};
-g_hGLRC = wglCreateContextAttribsARB(g_hDC, nullptr, contextAttributes.data());
-```
-
-Core 프로필에서는 `glewInit()`이 오류 플래그(`GL_INVALID_ENUM`)를 남기는 경우가 있어서, 초기화 직후 `glGetError()`로 비운다. Debug 빌드에서는 `GL_DEBUG_OUTPUT_SYNCHRONOUS`를 켜고 `glDebugMessageCallback`을 등록해, 드라이버 메시지가 오류를 낸 호출 직후 콘솔에 출력되게 했다.
-
-<br>
-
-## 2. 프레임 구성
-
-[`Display()`](main.cpp)는 한 프레임을 다음 순서로 그린다.
-
-| 순서 | 대상 | 프로그램 | 깊이 쓰기 | 블렌딩 | 드로우 |
-|---|---|---|:---:|---|---|
-| 1 | 별 900개 | star | 끔 | `SRC_ALPHA, ONE_MINUS_SRC_ALPHA` | `GL_POINTS` |
-| 2 | 태양 광채 | glow | 끔 | `SRC_ALPHA, ONE` (가산) | 사각형 1개 |
-| 3 | 소행성 4,000개 | asteroid | 켬 | 불투명 | `glDrawElementsInstanced` 1회 |
-| 4 | 행성 궤도선 | color | 끔 | 알파 | `GL_LINE_LOOP` |
-| 5 | 행성 자전축 | color | 켬 | 알파 | `GL_LINES` |
-| 6 | 행성 구 | planet | 켬 | 불투명 | `glDrawElements` |
-| 7 | 토성 고리 | color | 켬 | 알파 0.7 | `GL_TRIANGLE_STRIP` |
-
-4~7은 행성마다 반복한다. 깊이 검사는 모든 단계에서 켜 두고(`GL_LEQUAL`), 깊이 쓰기만 단계별로 바꾼다.
-
-별은 정점 셰이더에서 카메라 위치를 더해 그린다(`uCameraPosition + aStar.xyz`). 카메라가 어디로 이동해도 별과의 상대 위치가 같아서 배경처럼 보이고, 깊이 버퍼에 쓰지 않으므로 다른 물체를 가리지 않는다. 궤도선은 반투명이라 깊이를 쓰면 뒤에 있는 행성이 가려진다. 깊이 검사만 하고 쓰지 않으면, 행성 앞을 지나는 선은 행성에 가려지고 뒤를 지나는 선은 행성을 가리지 않는다.
-
-<br>
-
-## 3. 버퍼와 정점 입력
-
-### DSA로 메시 만들기
-
-모든 메시는 [`CreateMesh()`](main.cpp) 하나로 만든다. 정점 배열과 속성별 성분 수 목록을 받아 버퍼와 VAO를 구성한다. 객체를 바인딩하지 않고 이름으로 직접 다루므로, 바인딩 상태가 함수 사이에 새어 나가지 않는다.
-
-```cpp
-glCreateBuffers(1, &mesh.vbo);
-glNamedBufferStorage(mesh.vbo, size, data, 0);                     // 불변 스토리지, 갱신 플래그 없음
-
-glCreateVertexArrays(1, &mesh.vao);
-glVertexArrayVertexBuffer(mesh.vao, 0, mesh.vbo, 0, stride);       // 바인딩 슬롯 0
-for (const GLint size: _attributeSizes)
-{
-    glEnableVertexArrayAttrib(mesh.vao, location);
-    glVertexArrayAttribFormat(mesh.vao, location, size, GL_FLOAT, GL_FALSE, offset);
-    glVertexArrayAttribBinding(mesh.vao, location, 0);
-    ++location;
-    offset += size * sizeof(float);
-}
-```
-
-정점 데이터는 시작할 때 한 번 올리고 바꾸지 않으므로 `glNamedBufferStorage`의 플래그를 0으로 둔다. 인덱스 버퍼가 있으면 `glVertexArrayElementBuffer`로 VAO에 연결한다.
-
-| 메시 | 프리미티브 | 정점 속성 | 크기 |
-|---|---|---|---|
-| 구 | `GL_TRIANGLES` (인덱스) | 위치 3 + UV 2 | 정점 10,201개, 인덱스 60,000개 (100×100 분할) |
-| 고리 | `GL_TRIANGLE_STRIP` | 위치 3 | 202개 (안쪽 1.35, 바깥 2.2) |
-| 궤도 | `GL_LINE_LOOP` | 위치 3 | 256개 (단위 원) |
-| 자전축 | `GL_LINES` | 위치 3 | 2개 |
-| 별 | `GL_POINTS` | 위치 3 + 밝기 1 | 900개 |
-| 광채 | `GL_TRIANGLE_STRIP` | 모서리 2 | 4개 |
-| 바위 | `GL_TRIANGLES` (인덱스) | 위치 3 + 법선 3 + UV 2 + 탄젠트 4 | 삼각형 3,998개 |
-
-구와 궤도, 고리는 크기 1로 한 번만 만들고, 크기는 모델 행렬의 `Scale()`로 바꾼다. 행성 9개가 같은 구 메시를 공유한다.
-
-### 유니폼
-
-유니폼 위치는 GLSL에서 `layout(location = N)`으로 고정하고, 값은 `glProgramUniform*`로 프로그램을 지정해 넣는다. 실행 중에 `glGetUniformLocation`을 호출하지 않고, 값을 넣기 위해 `glUseProgram`을 먼저 호출할 필요도 없다. 샘플러는 `layout(binding = N)`으로 텍스처 유닛을 고정하고 `glBindTextureUnit`으로 텍스처를 붙인다.
-
-<br>
-
-## 4. 변환
-
-### 행렬
-
-`Mat4`는 `std::array<float, 16>`을 열 우선(column-major)으로 저장해, `glProgramUniformMatrix4fv`에 `transpose = GL_FALSE`로 그대로 넘긴다. `Translate`, `Scale`, `RotateY`, `RotateZ`, `Perspective`, `LookAt`을 직접 구현했다. 투영은 수직 시야각 40도, near 0.1, far 1000이다.
-
-### 행성 모델 행렬
+공전과 자전은 모두 회전이지만 회전 중심이 다릅니다. 자전은 구를 자기 중심에서 회전시킨 뒤 궤도 위치로 옮기고, 공전은 그 위치까지 포함해 태양을 중심으로 회전시켜야 합니다. 그래서 행렬을 곱하는 순서가 움직임을 결정합니다. [`Display()`](https://github.com/JuggernautSensei/3D-Solar-System-Simulator/blob/0a35574340bd9a171c0a023fb5215e7f9ac9faf1/main.cpp#L1156)에서는 다음처럼 변환을 합성합니다.
 
 ```cpp
 const Mat4 model = RotateZ(-planet.revolutionTilt)             // 궤도면 기울기
-                 * RotateY(planet.revolutionSpeed * g_days)    // 공전
-                 * Translate({ distance, 0.f, 0.f })           // 궤도 반지름
+                 * RotateY(planet.revolutionSpeed * g_days)    // 태양을 중심으로 공전
+                 * Translate({ distance, 0.f, 0.f })           // 궤도 위치로 이동
                  * RotateZ(-planet.rotationTilt)               // 자전축 기울기
-                 * RotateY(planet.rotationSpeed * g_days);     // 자전
+                 * RotateY(planet.rotationSpeed * g_days);     // 행성 중심에서 자전
 ```
 
-정점에는 오른쪽 행렬부터 적용된다. 원점에서 자전시킨 구를 자전축만큼 기울이고, 궤도 반지름만큼 옮긴 뒤 공전시킨다. 자전축 기울기를 이동보다 먼저 적용하므로 공전하는 동안 자전축 방향이 유지된다. 각 행렬은 매 프레임 경과 일수 `g_days`로부터 새로 계산하므로, 이전 프레임 값에 증분을 누적할 때 생기는 오차가 없다.
+정점에는 오른쪽 행렬부터 적용됩니다. 구의 크기를 정하는 `Scale(radius)`는 이 모델 행렬 오른쪽에 곱합니다. 카메라의 뷰 행렬과 원근 투영 행렬까지 곱하면, 구의 로컬 좌표가 최종 화면을 그리는 데 필요한 좌표로 바뀝니다. 벡터와 행렬 연산, `LookAt()`과 `Perspective()`도 코드에 직접 구현했습니다.
 
-세계 좌표는 Y축이 위이고 궤도면은 XZ 평면이다. 실제 거리를 그대로 쓰면 해왕성(30AU)과 수성(0.4AU)이 75배 차이 나서 한 화면에 담기지 않으므로, 거리를 로그로 압축한다.
-
-```cpp
-float ToDisplayDistance(const float _distance)   // _distance = AU × 8
-{
-    return _distance > 0.f ? 5.f + std::log2(1.f + _distance) * 4.f : 0.f;
-}
-```
-
-수성은 13.3, 지구는 17.7, 목성은 26.7, 해왕성은 36.7에 놓인다. 반지름은 지구를 0.1로 둔 실제 비율에 1.6을 곱하고 최솟값을 0.55로 제한한다.
-
-### 뷰 행렬
-
-카메라는 위치와 yaw, pitch만 가진다. 시선 방향은 `(sin yaw · cos pitch, sin pitch, -cos yaw · cos pitch)`이고, 위치와 시선 방향, 세계 위쪽 `(0, 1, 0)`으로 `LookAt`을 만든다. pitch는 ±89도로 제한해 시선이 위쪽 벡터와 평행해지지 않게 했다.
+텍스처 좌표는 구를 만들 때 경도와 위도를 각각 U와 V에 대응시켰습니다. 경도 한 바퀴가 끝나는 지점은 위치가 같아도 U가 0인 정점과 1인 정점을 따로 둡니다. 그래야 텍스처의 양 끝이 만나는 이음매에서 좌표가 구의 반대편까지 보간되지 않습니다. 이미지는 stb_image로 읽고, 축소해서 볼 때는 밉맵과 트라이리니어 필터링을 사용합니다.
 
 <br>
 
-## 5. 셰이더와 조명
+## 셰이더와 조명
 
-셰이더는 GLSL 460 문자열로 소스에 들어 있고, 시작할 때 프로그램 5개로 컴파일·링크한다. 실패하면 정보 로그를 출력하고 종료한다.
+행성의 표면 무늬는 텍스처로 표현했습니다. 여기에 태양 방향에 따른 밝기를 더하려면 표면이 어느 쪽을 향하는지도 알아야 합니다. 그래서 표면의 법선과 빛의 방향으로 밝기를 계산하는 셰이더를 작성했습니다.
 
-| 프로그램 | 정점 입력 | 유니폼 | 용도 |
-|---|---|---|---|
-| planet | 위치, UV | 모델, 뷰·투영, `uLit`, 텍스처 | 텍스처 + 램버트 조명 |
-| asteroid | 위치, 법선, UV, 탄젠트 + 인스턴스 속성 3개 | 뷰·투영, `uDays`, 색·노멀 텍스처 | 인스턴싱 + 노멀 매핑 |
-| color | 위치 | MVP, 색 | 궤도선, 자전축, 고리 |
-| star | 위치·밝기 | 뷰·투영, 카메라 위치 | 배경 별 |
-| glow | 모서리 | 뷰·투영, 카메라 오른쪽·위쪽, 반지름 | 태양 광채 빌보드 |
+<p align="center"><img src="Docs/Earth.gif" alt="자전하는 지구에서 태양을 향한 표면과 반대편의 밝기가 다르게 보이는 화면" width="840"></p>
 
-광원은 원점에 있는 태양 하나다. 조명은 픽셀 단위 램버트 확산광과 고정 주변광으로 계산한다.
+지구가 자전해도 밝은 쪽은 태양을 향합니다. 텍스처의 위치와 조명으로 정해지는 밝기를 따로 계산한 결과입니다.
+
+### 정점 변환과 픽셀 계산
+
+계산은 정점 셰이더와 프래그먼트 셰이더로 나눴습니다. 정점 셰이더는 위치를 월드 공간으로 바꾸고, 조명에 사용할 법선과 UV를 함께 넘깁니다. 프래그먼트 셰이더는 삼각형 내부에서 보간된 값을 받아 텍스처를 읽고 각 픽셀의 색을 계산합니다.
 
 ```glsl
-const vec3 kAmbient  = vec3(0.12, 0.14, 0.2) * 0.2;
-const vec3 kSunlight = vec3(1.0, 0.94, 0.84) * 0.8;
+vec4 worldPosition = uModel * vec4(aPosition, 1.0);
+vWorldPosition     = worldPosition.xyz;
+vNormal            = mat3(uModel) * aPosition;
+vTexCoord          = aTexCoord;
+gl_Position        = uViewProjection * worldPosition;
+```
 
-float diffuse = max(dot(normalize(vNormal), normalize(-vWorldPosition)), 0.0);   // 광원 방향 = 원점 - 위치
+행성 메시는 원점 중심의 단위 구이므로 정점 위치가 곧 표면 법선의 방향입니다. 행성에는 회전과 균일한 크기 조절만 적용하므로, 법선도 모델 행렬의 3×3 부분으로 변환한 뒤 정규화해 사용합니다. 뒤에서 설명할 소행성은 축마다 크기가 달라 이 처리가 달라집니다.
+
+### 램버트 조명
+
+태양은 월드 원점에 있습니다. 따라서 표면에서 태양으로 향하는 방향은 `-vWorldPosition`입니다. 이 방향과 법선을 정규화해 내적하면, 표면이 빛을 얼마나 정면으로 받는지 알 수 있습니다. 아래는 [`kPlanetFragmentShader`](https://github.com/JuggernautSensei/3D-Solar-System-Simulator/blob/0a35574340bd9a171c0a023fb5215e7f9ac9faf1/main.cpp#L434)의 조명 계산입니다.
+
+```glsl
+float diffuse = max(dot(normalize(vNormal), normalize(-vWorldPosition)), 0.0);
 oColor        = vec4(albedo.rgb * (kAmbient + kSunlight * diffuse), albedo.a);
 ```
 
-행성 메시는 원점 중심의 단위 구라서 법선이 정점 위치와 같다. 정점 셰이더는 법선을 따로 받지 않고 `mat3(uModel) * aPosition`으로 계산한다. 모델 행렬이 회전과 균일 스케일로만 이루어져 있으므로 역전치 행렬 없이 정규화만 하면 된다. 태양은 `uLit = false`로 조명 계산을 건너뛰고 텍스처 색을 그대로 출력한다.
+표면이 빛을 정면으로 받으면 내적이 1에 가까워지고, 비스듬히 받으면 작아집니다. 빛의 반대편에서는 음수가 나오므로 0으로 제한합니다. 이것이 램버트 확산광입니다. 여기에 고정된 주변광을 더해 태양 반대쪽이 완전히 검게 사라지지 않게 했습니다. 태양 자체는 이 조명 계산을 거치지 않고 텍스처 색을 그대로 출력합니다.
 
-<p align="center">
-  <img src="Docs/Earth.gif" alt="자전하는 지구. 태양을 향한 면만 밝다" width="49%">
-  <img src="Docs/Jupiter.gif" alt="소행성대 너머의 목성" width="49%">
-</p>
+이 조명은 표면 방향에 따른 밝기만 계산합니다. 거리에 따른 빛의 감쇠, 정반사와 다른 물체가 만드는 그림자는 구현하지 않았습니다. 따라서 밝고 어두운 면의 구분은 표현하지만, 물리적으로 정확한 태양광을 재현하는 모델은 아닙니다.
 
 <br>
 
-## 6. 텍스처 매핑
+## 깊이 처리와 블렌딩
 
-이미지는 stb_image로 RGBA 4채널로 읽는다. 이미지 첫 행이 위쪽이고 OpenGL 텍스처 좌표는 아래쪽이 0이므로 `stbi_set_flip_vertically_on_load(true)`로 뒤집는다.
+행성, 궤도선과 고리를 한 장면에 그리면 색을 계산하는 것만으로는 부족합니다. 가까운 물체가 먼 물체를 가려야 하고, 고리처럼 반투명한 물체는 이미 그려진 배경과 색을 섞어야 합니다. 이 두 역할을 깊이 버퍼와 블렌딩으로 나눴습니다.
+
+한 프레임은 배경 별, 태양 광채, 소행성대 순으로 그립니다. 그다음 각 행성에 대해 궤도선, 자전축과 행성 표면을 그리고, 토성 차례에는 고리도 이어서 그립니다. 이 순서 안에서 대상에 맞게 깊이 쓰기와 블렌딩 상태를 바꿉니다.
+
+### 깊이 검사와 깊이 쓰기
+
+깊이 검사는 새로 그릴 픽셀이 깊이 버퍼에 기록된 값보다 가까운지 비교하는 과정입니다. 코드에서는 `GL_LEQUAL`을 사용해 깊이가 더 작거나 같을 때 통과시킵니다. 깊이 쓰기는 그 검사를 통과한 픽셀의 깊이를 버퍼에 남기는 동작입니다.
 
 ```cpp
-const auto levels = static_cast<GLsizei>(std::bit_width(static_cast<unsigned>(std::max(width, height))));
-glCreateTextures(GL_TEXTURE_2D, 1, &texture);
-glTextureStorage2D(texture, levels, GL_RGBA8, width, height);       // 밉맵 단계까지 불변 할당
-glTextureSubImage2D(texture, 0, 0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
-glGenerateTextureMipmap(texture);
-glTextureParameteri(texture, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+glEnable(GL_DEPTH_TEST);
+glDepthFunc(GL_LEQUAL);
+
+glDepthMask(GL_FALSE);   // 깊이 검사는 유지하고, 깊이 기록만 끕니다.
 ```
 
-밉맵 단계 수는 `floor(log2(max(w, h))) + 1`이고, `std::bit_width`가 이 값을 정수 연산으로 구한다. 축소 필터는 트라이리니어(`GL_LINEAR_MIPMAP_LINEAR`)다. 행성은 멀리서 몇 픽셀 크기로 보이는 경우가 많아서, 밉맵이 없으면 카메라가 움직일 때 표면 텍스처가 반짝인다.
+[`Display()`](https://github.com/JuggernautSensei/3D-Solar-System-Simulator/blob/0a35574340bd9a171c0a023fb5215e7f9ac9faf1/main.cpp#L1156)에서는 배경 별과 태양 광채를 먼저 그리되 깊이를 기록하지 않습니다. 뒤에 그릴 행성이나 소행성이 이 효과의 깊이값에 막히지 않도록 하기 위해서입니다. 불투명한 소행성과 행성을 그릴 때는 다시 깊이 쓰기를 켜서 서로의 앞뒤 관계를 판정합니다.
 
-구 메시의 UV는 경도·위도에서 바로 만든다. 경도 방향 분할 `i`, 위도 방향 분할 `j`에 대해 위치는 `(sin θ · sin ρ, cos ρ, -cos θ · sin ρ)`, UV는 `(1 - i/100, 1 - j/100)`이다. 경도 0과 360도에 해당하는 정점을 따로 두어(열 101개) 텍스처 이음매에서 UV가 1에서 0으로 넘어가며 생기는 보간 오류를 막는다.
+궤도선도 깊이 쓰기를 끄고 그립니다. 이미 깊이가 기록된 물체와는 깊이를 비교하지만, 선 자체가 이후 물체의 깊이 판정에 영향을 주지는 않습니다. `glDepthMask(GL_FALSE)`를 호출해도 깊이 검사까지 꺼지는 것은 아니라는 점이 이 처리에서 중요합니다.
+
+### 알파 블렌딩과 가산 블렌딩
+
+<p align="center">
+  <img src="Docs/Saturn.gif" alt="알파 블렌딩을 적용한 토성 고리" width="49%">
+  <img src="Docs/Sun.gif" alt="가산 블렌딩으로 표현한 태양 주변의 광채" width="49%">
+</p>
+
+왼쪽은 배경과 색을 섞는 토성 고리, 오른쪽은 이미 그려진 색에 빛을 더하는 태양 광채입니다.
+
+토성 고리에는 알파값 0.7을 주고 일반적인 알파 블렌딩을 사용했습니다.
+
+```cpp
+glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+```
+
+RGB 색을 기준으로 보면 새 색에 알파를 곱하고, 기존 색에는 `1 - 알파`를 곱해 더하는 방식입니다. 고리의 색과 이미 그려진 배경이 함께 보이게 됩니다.
+
+태양 주변 광채에는 가산 블렌딩을 사용했습니다.
+
+```cpp
+glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+```
+
+이 경우 기존 색은 그대로 두고 새 색에 알파를 곱한 값을 더합니다. 중심에서 멀어질수록 알파를 낮춰 빛이 옅어지게 했습니다. 같은 반투명 표현이라도 표면의 색을 섞는 고리와 빛을 더하는 광채에는 다른 블렌딩 식이 필요했습니다.
+
+현재 반투명 렌더링에는 한계가 있습니다. 행성 순서대로 그리면서 토성 고리도 깊이를 기록하고, 반투명 물체를 카메라에서 먼 순서로 정렬하지 않습니다. 따라서 고리 뒤쪽 물체가 나중에 그려지면 깊이 검사에서 탈락해 고리 너머로 보이지 않을 수 있습니다. 블렌딩 식을 설정하는 것에 더해 그리는 순서와 깊이 쓰기도 함께 다뤄야 하는 부분입니다.
 
 <br>
 
-## 7. 노멀 매핑
+## 노멀 매핑
 
-### OBJ 로딩
+소행성에는 외부 바위 모델을 사용했습니다. 행성처럼 매끈한 구와 달리 바위 표면에는 작은 요철이 있습니다. 이 요철을 모두 삼각형으로 만들면 메시가 복잡해지므로, 표면의 법선 방향을 텍스처에서 읽어 조명 계산에 사용하는 노멀 매핑을 적용했습니다.
 
-[`LoadObjMesh()`](main.cpp)는 `v`, `vt`, `vn`, `f` 줄을 읽는다. OBJ의 면은 정점을 `위치/UV/법선` 번호 조합으로 가리키는데, 같은 위치라도 UV나 법선이 다르면 GPU에서는 다른 정점이어야 한다. 그래서 `"38/1/1"` 같은 토큰 문자열을 키로 `unordered_map`에 넣고, 처음 나온 조합만 새 정점으로 만든다. 다각형 면은 첫 정점을 기준으로 삼각형 팬으로 나눈다. 번호가 범위를 벗어나거나 형식이 맞지 않으면 해당 토큰을 출력하고 로딩을 중단한다. 로딩이 끝나면 모든 위치를 가장 먼 정점까지의 거리로 나눠 반지름 1로 정규화한다.
+<p align="center"><img src="Docs/NormalMap.gif" alt="같은 바위의 비교. 왼쪽은 정점 법선만 사용하고 오른쪽은 노멀 맵을 적용한 화면" width="840"></p>
 
-### 탄젠트 계산
+왼쪽은 메시의 정점 법선만 사용하고 오른쪽은 노멀 맵을 적용한 화면입니다. 두 바위의 기하 형태는 같습니다. 노멀 매핑은 실제 정점을 움직이지 않으므로 외곽선은 바뀌지 않고, 표면 내부에서 빛을 받는 방향이 달라져 요철이 있는 것처럼 보입니다.
 
-노멀 맵은 탄젠트 공간(표면 기준 좌표계)의 법선을 저장하므로, 정점마다 탄젠트 T와 바이탄젠트 B가 필요하다. OBJ에는 이 값이 없어 삼각형의 두 변 `e1`, `e2`와 UV 차이 `(Δu1, Δv1)`, `(Δu2, Δv2)`로 계산한다.
+### 탄젠트 공간
+
+색상 텍스처의 RGB가 색을 저장한다면, 노멀 맵의 RGB는 표면을 기준으로 한 법선 방향을 저장합니다. 이 방향은 모델이 놓인 월드 공간 기준이 아니라 표면의 UV 방향을 기준으로 한 탄젠트 공간의 값입니다. 따라서 행성 조명에 쓰던 월드 공간의 빛 방향과 바로 내적할 수 없습니다.
+
+표면의 U 방향을 나타내는 탄젠트 T, V 방향을 나타내는 바이탄젠트 B, 표면 법선 N을 구해 좌표계를 만들었습니다. [`LoadObjMesh()`](https://github.com/JuggernautSensei/3D-Solar-System-Simulator/blob/0a35574340bd9a171c0a023fb5215e7f9ac9faf1/main.cpp#L911)는 OBJ에서 위치·UV·법선을 읽고, 각 삼각형의 변과 UV 차이로 T와 B를 계산합니다.
 
 ```cpp
 const float area      = du1 * dv2 - du2 * dv1;
@@ -221,176 +158,93 @@ const Vec3  tangent   = (edge1 * dv2 - edge2 * dv1) * (1.f / area);
 const Vec3  bitangent = (edge2 * du1 - edge1 * du2) * (1.f / area);
 ```
 
-각 삼각형의 T, B를 꼭짓점 3개에 누적한 뒤, T를 그람-슈미트 방식으로 법선과 직교하게 만들고 정규화한다. B는 저장하지 않는다. `cross(N, T)`와 누적한 B의 방향이 같은지만 `handedness`(±1)로 저장하고, 셰이더에서 `cross(N, T) * handedness`로 복원한다. UV가 뒤집힌 영역에서도 B의 방향이 맞게 유지된다. 정점 하나는 위치 3 + 법선 3 + UV 2 + 탄젠트 4로 float 12개다.
+여기서 `edge1`, `edge2`는 삼각형의 두 변이고 `du`, `dv`는 각 변에 대응하는 UV 차이입니다. 같은 정점을 공유하는 삼각형의 탄젠트를 누적한 뒤 법선 성분을 제거하고 정규화합니다. 바이탄젠트 방향은 `cross(N, T)`와 실제 계산한 B의 방향을 비교해 부호로 저장합니다. 이렇게 하면 정점에는 탄젠트 xyz와 부호 하나만 추가하면 됩니다.
 
-### 셰이더
+### 법선 변환과 조명
 
-정점 셰이더는 T, B, N을 월드 공간으로 변환해 `mat3`로 넘기고, 프래그먼트 셰이더는 노멀 맵 값을 [-1, 1]로 펼쳐 이 행렬로 변환한다.
+소행성은 같은 메시가 반복돼 보이는 것을 줄이기 위해 축마다 크기를 다르게 적용합니다. 이 비균일 스케일에서는 법선에 위치와 같은 변환을 그대로 적용하면 표면과 수직을 이루지 못합니다. 정점 셰이더에서 법선은 축별 크기로 나누고 회전시킵니다. 탄젠트는 표면 위 방향이므로 축별 크기를 곱한 뒤 회전시키고, 다시 법선에 수직이 되도록 보정합니다.
+
+마지막으로 프래그먼트 셰이더에서 노멀 맵의 `[0, 1]` 값을 `[-1, 1]`로 바꾸고, T·B·N을 열로 둔 행렬을 곱해 월드 공간 법선으로 옮깁니다.
 
 ```glsl
-// 정점 셰이더
-vec3 normal    = normalize(rotation * (aNormal / aScale.xyz));
-vec3 tangent   = normalize(rotation * (aTangent.xyz * aScale.xyz));
-tangent        = normalize(tangent - dot(tangent, normal) * normal);
-vec3 bitangent = cross(normal, tangent) * aTangent.w;
-vTangentToWorld = mat3(tangent, bitangent, normal);
-
-// 프래그먼트 셰이더
 vec3 normal = normalize(vTangentToWorld * (texture(uNormal, vTexCoord).xyz * 2.0 - 1.0));
 ```
 
-소행성은 축마다 크기가 다르게 늘어나므로, 법선은 크기를 곱하지 않고 나눈다. 비균일 스케일에서 위치와 같은 변환을 법선에 적용하면 표면과 수직이 아니게 되기 때문이고, 대각 스케일 행렬의 역전치를 곱하는 것과 같다. 탄젠트는 표면 위의 방향이므로 위치처럼 크기를 곱한다.
-
-<p align="center"><img src="Docs/NormalMap.gif" alt="같은 바위를 정점 법선만으로 그린 것과 노멀 맵을 적용한 것의 비교" width="840"></p>
-
-같은 바위를 같은 조건에서 그렸다. 왼쪽은 정점 법선만 쓴 것이고, 오른쪽은 노멀 맵을 적용한 것이다. 삼각형 3,998개로는 표현되지 않는 작은 요철이 노멀 맵으로 조명에 나타난다.
+이 법선을 사용하면 빛의 방향과 밝기를 계산하는 식은 앞의 램버트 조명과 같습니다. 표면 방향을 어디에서 가져오는지가 달라진 것입니다.
 
 <br>
 
-## 8. 인스턴싱
+## 인스턴싱
 
-<p align="center"><img src="Docs/AsteroidBelt.gif" alt="소행성대 안쪽에서 본 장면. 바위가 각자 다른 축으로 자전하며 공전한다" width="840"></p>
+소행성대를 만들어 보면서 물체 수를 늘리자 프레임 레이트가 크게 떨어졌습니다. 다른 게임에서는 이보다 많은 물체도 그리는데 어떤 방법을 쓰는지 찾아보다 인스턴싱을 알게 됐습니다. 같은 바위 메시를 반복해서 사용하는 소행성대에 적용해 볼 수 있겠다고 생각했습니다.
 
-### 인스턴스 버퍼
+인스턴싱은 같은 메시를 여러 개 그릴 때 개체마다 다른 값만 따로 전달하고, 하나의 드로우 명령으로 여러 개체를 그리는 방식입니다. 메시를 공유하는 것에서 한 걸음 더 나아가 드로우 호출도 묶을 수 있습니다.
 
-소행성 4,000개는 같은 바위 메시를 쓰고, 개체마다 다른 값은 인스턴스 버퍼 하나에 담는다. 버퍼는 시작할 때 한 번 채우고(48바이트 × 4,000 = 192KB) 이후 갱신하지 않는다.
+<p align="center"><img src="Docs/AsteroidBelt.gif" alt="같은 바위 메시를 사용한 소행성들이 서로 다른 크기와 회전으로 공전하는 화면" width="840"></p>
 
-| location | 속성 | 내용 |
-|:---:|---|---|
-| 4 | `aOrbit` | 궤도 반지름, 높이, 초기 위상, 공전 각속도 |
-| 5 | `aSpin` | 자전축 xyz, 자전 각속도 |
-| 6 | `aScale` | 축별 크기 xyz, 초기 자전 각도 |
+같은 바위 메시로 소행성 4,000개를 그린 장면입니다. 개체마다 궤도와 크기, 회전축을 달리했습니다.
 
-인스턴스 버퍼는 VAO의 바인딩 슬롯 1에 연결하고, 디바이저를 1로 두어 인스턴스마다 한 번씩 다음 값을 읽게 한다.
+### 인스턴스 데이터
+
+소행성은 메시와 색상·노멀 텍스처를 공유합니다. 대신 궤도와 자전, 크기에 필요한 값을 개체마다 따로 생성했습니다. [`CreateAsteroidInstances()`](https://github.com/JuggernautSensei/3D-Solar-System-Simulator/blob/0a35574340bd9a171c0a023fb5215e7f9ac9faf1/main.cpp#L1047)에서 이 값을 세 개의 `vec4`로 묶습니다.
+
+| 속성 | 저장하는 값 |
+|---|---|
+| `aOrbit` | 궤도 반지름, 높이, 초기 공전 각도, 공전 각속도 |
+| `aSpin` | 자전축 xyz, 자전 각속도 |
+| `aScale` | 축별 크기 xyz, 초기 자전 각도 |
+
+개체당 float 12개, 48바이트이므로 4,000개에 필요한 인스턴스 데이터는 192,000바이트입니다. 시작할 때 한 번 생성해 올리고 매 프레임 다시 쓰지 않습니다. 궤도 반지름과 높이, 크기와 회전축을 달리해 같은 모델이 서로 다르게 보이도록 했습니다.
+
+인스턴스 데이터는 VAO의 바인딩 슬롯 1에 연결했습니다. `glVertexArrayBindingDivisor(..., 1, 1)`은 이 슬롯의 속성을 정점마다 바꾸는 대신 인스턴스가 바뀔 때마다 다음 값으로 넘어가게 합니다. 따라서 한 바위를 구성하는 정점은 모두 같은 궤도·자전·크기 값을 읽습니다.
 
 ```cpp
 glVertexArrayVertexBuffer(_mesh.vao, 1, _mesh.instanceBuffer, 0, 12 * sizeof(float));
-glVertexArrayBindingDivisor(_mesh.vao, 1, 1);                       // 슬롯 1: 인스턴스 단위
-for (GLuint i = 0; i < 3; ++i)
-{
-    glEnableVertexArrayAttrib(_mesh.vao, 4 + i);
-    glVertexArrayAttribFormat(_mesh.vao, 4 + i, 4, GL_FLOAT, GL_FALSE, i * 4 * sizeof(float));
-    glVertexArrayAttribBinding(_mesh.vao, 4 + i, 1);
-}
+glVertexArrayBindingDivisor(_mesh.vao, 1, 1);
 ```
 
-### 절차적 배치
-
-| 값 | 생성 방법 |
-|---|---|
-| 궤도 반지름 | 평균 2.7AU, 표준편차 0.3AU 정규분포, [2.1, 3.3]AU로 자른 뒤 `ToDisplayDistance()` |
-| 공전 각속도 | 케플러 제3법칙, 2π / (365.26 · a<sup>1.5</sup>) rad/일 |
-| 높이 | 표준편차 0.35 정규분포 |
-| 자전 | 균등분포 축, 20~120도/일, 방향 무작위 |
-| 크기 | 0.06 + 0.2 · u³ (u는 [0, 1] 균등분포) |
-| 축별 비율 | 크기에 축마다 0.75~1.25배를 따로 곱함 |
-
-시드는 고정(`std::mt19937 { 42 }`)이라 실행할 때마다 같은 소행성대가 만들어진다. 크기에 u³을 쓰면 작은 바위가 많고 큰 바위가 드문 분포가 된다. 축별 비율과 자전축이 달라서 같은 메시가 서로 다른 모양으로 보인다.
-
-### 정점 셰이더 애니메이션
-
-소행성의 위치와 자세는 정점 셰이더가 `uDays` 하나로 계산한다. CPU는 매 프레임 float 하나를 보내고 드로우 콜을 한 번 호출한다.
+정점 셰이더는 인스턴스 데이터와 경과 일수 `uDays`로 현재 위치와 자세를 계산합니다. `AxisAngle()`은 자전축과 각도로 회전 행렬을 만드는 함수입니다.
 
 ```glsl
-mat3  rotation = AxisAngle(aSpin.xyz, aScale.w + aSpin.w * uDays);       // 로드리게스 회전 행렬
+mat3  rotation = AxisAngle(aSpin.xyz, aScale.w + aSpin.w * uDays);
 float angle    = aOrbit.z + aOrbit.w * uDays;
 vec3  center   = vec3(aOrbit.x * cos(angle), aOrbit.y, -aOrbit.x * sin(angle));
 
 vWorldPosition = center + rotation * (aPosition * aScale.xyz);
-gl_Position    = uViewProjection * vec4(vWorldPosition, 1.0);
 ```
 
-`AxisAngle()`은 임의 축 회전 행렬을 로드리게스 공식으로 만든다. 공전 방향은 행성의 `RotateY`와 같게 맞췄다.
+현재 구현에서는 CPU에서 소행성 4,000개의 모델 행렬을 매 프레임 만들 필요 없이, 움직임에 필요한 시간값을 보내고 `glDrawElementsInstanced`를 한 번 호출합니다. 카메라 변환과 텍스처를 설정하는 작업은 별도로 수행합니다. 아래 비교 실험에서는 개별 드로우 쪽도 같은 셰이더에서 움직임을 계산하도록 맞췄기 때문에, CPU 행렬 계산을 셰이더로 옮기는 효과까지 측정한 것은 아닙니다.
 
-### 성능 측정
+### 드로우 방식 비교
 
-드로우 방식만 바꾼 측정용 빌드로 소행성대를 그리는 구간의 시간을 쟀다. GPU 시간은 `GL_TIME_ELAPSED` 쿼리 4개를 순환하며 4프레임 전 결과를 읽었고, CPU 시간은 같은 구간의 GL 호출이 반환되기까지의 시간이다. 수직 동기화를 끄고 카메라를 고정한 상태에서 3초 예열 후 10초를 측정했고, 두 번 측정한 평균이다.
+적용 당시의 FPS 기록은 남아 있지 않아 당시의 개선 여부와 폭은 확인할 수 없습니다. 아래 수치는 **현재 구현에서 드로우 방식만 바꿔 재현한 비교 실험**입니다. 소행성마다 속성을 설정하고 `glDrawElements`를 4,000번 호출하는 방식과, 인스턴스 속성 배열을 사용해 `glDrawElementsInstanced`를 한 번 호출하는 방식을 비교했습니다.
 
-| 방식 | GPU (전경) | GPU (근경) | CPU (전경) | CPU (근경) |
-|---|---:|---:|---:|---:|
-| `glDrawElementsInstanced` 1회 | 7.75ms | 8.01ms | 0.03ms | 0.02ms |
-| `glDrawElementsInstancedBaseInstance` 4,000회 | 7.77ms | 8.09ms | 0.11ms | 3.05ms |
-| `glVertexAttrib4fv` 3회 + `glDrawElements`, 4,000회 | 7.12ms | 7.43ms | 0.36ms | 0.50ms |
-| 인스턴싱 1회, 인덱스 1/8만 그림 | 0.98ms | 1.00ms | 0.004ms | 0.004ms |
+메시, 텍스처와 셰이더는 같게 두고 카메라와 시뮬레이션 시간도 고정했습니다. 전체 장면을 보는 시점과 소행성대 근처의 시점에서 각각 3초 예열 후 8초 이상 측정했고, 방식의 실행 순서를 바꾸며 세 번 반복했습니다. CPU 시간은 소행성 드로우 함수가 반환될 때까지, GPU 시간은 같은 구간에 넣은 타임스탬프 쿼리로 측정했습니다.
 
-세 번째 행은 인스턴스 속성 배열을 끄고 개체마다 CPU에서 속성 값을 넣는 방식으로, 인스턴싱을 쓰지 않을 때의 일반적인 구현에 해당한다. 마지막 행은 바위당 삼각형을 약 500개로 줄였을 때의 비용을 보기 위한 것이고 화면은 올바르지 않다.
-
-- GPU 시간은 드로우 방식과 관계없이 7.1~8.1ms로 비슷하고, 삼각형 수를 1/8로 줄이면 0.98ms가 된다. 이 장면의 GPU 비용은 프레임당 삼각형 수(3,998 × 4,000 ≈ 1,600만 개)에 비례한다.
-- 인스턴싱의 효과는 CPU 쪽에 나타난다. 개체마다 상태를 설정하는 방식(0.36~0.50ms)보다 10배 이상 짧다.
-- 이 환경에서는 프레임 시간이 GPU에 묶여 있어 CPU 차이가 FPS 차이로 이어지지 않았다.
-- 세 번째 방식의 GPU 시간이 0.6ms 짧은 이유와, `BaseInstance` 방식의 근경 CPU 시간이 크게 튄 이유는 확인하지 않았다. CPU 시간에는 드라이버 스레드의 작업이 포함되지 않는다.
+| 시점 | 소행성 드로우 방식 | CPU 구간 | GPU 구간 | FPS |
+|---|---|---:|---:|---:|
+| 전체 장면 | 개별 드로우 4,000회 | 3.8381ms | 12.463ms | 79.66 |
+| 전체 장면 | 인스턴싱 1회 | 0.0013ms | 12.703ms | 78.20 |
+| 소행성대 근처 | 개별 드로우 4,000회 | 6.1572ms | 9.451ms | 104.88 |
+| 소행성대 근처 | 인스턴싱 1회 | 0.0018ms | 10.290ms | 96.40 |
 
 > [!NOTE]
-> AMD Ryzen 9 7945HX, NVIDIA GeForce RTX 4060 Laptop GPU (드라이버 32.0.16.1714), Windows 11, 1920×1080, 4x MSAA, Release 빌드. 측정용 빌드는 저장소에 포함하지 않았다.
+> 2026-10-18 측정. AMD Ryzen 9 7945HX, NVIDIA GeForce RTX 4060 Laptop GPU, 드라이버 617.14, MSVC x64 최적화 빌드(`/O2`), 1920×1080, 4x MSAA. FPS는 화면 출력 대기를 제외한 오프스크린 렌더링 처리량입니다. 구간 시간은 모든 측정 프레임의 평균이고, FPS는 세 번의 총 프레임 수를 총 경과 시간으로 나눴습니다.
+
+CPU의 드로우 호출 구간은 크게 짧아졌습니다. 다만 이 시간은 호출 스레드에서 관찰한 값이고 드라이버 내부 작업 전체를 뜻하지는 않습니다. 개별 드로우 구간에는 드라이버 대기가 포함될 수 있으므로, 숫자의 비율을 그대로 CPU 연산량의 개선 배율로 해석하지 않았습니다.
+
+GPU 구간 시간은 줄지 않았고 FPS도 높아지지 않았습니다. 드로우 호출을 묶어도 같은 소행성 4,000개의 기하와 셰이더를 처리한다는 점은 그대로입니다. 이번 실험에서 확인한 효과는 CPU의 드로우 제출 구간을 줄인 것이며, 프레임 레이트 개선까지 확인한 결과는 아닙니다.
+
+실행 간 편차도 있었습니다. 전체 장면의 인스턴싱 결과는 반복별로 67.13~94.82FPS였고, 개별 드로우는 74.57~89.03FPS였습니다. 노트북의 전력·온도와 다른 프로그램의 부하를 완전히 통제한 실험은 아니므로 작은 차이의 원인은 단정하지 않았습니다.
+
+본문에는 비교 방법과 평균값, 해석을 남겼습니다. 카메라 좌표와 반복별 결과, 프레임별 원본 및 실행 스크립트는 [측정 보고서](Docs/InstancingBenchmark/measurement-report.md)에서 확인할 수 있습니다.
 
 <br>
 
-## 9. 블렌딩
+## 회고
 
-### 태양 광채 빌보드
+수업에서 배운 변환과 텍스처링을 실제로 움직이는 태양계에 적용하면서, 개별 연산이 한 장면 안에서 어떻게 연결되는지 확인할 수 있었습니다. 같은 구 메시도 변환을 합성하는 순서와 텍스처를 달리하면 서로 다른 행성이 됩니다. 공전과 자전을 함께 표현하는 과정은 행렬 곱셈을 화면의 움직임과 연결해 보는 기회였습니다.
 
-광채는 카메라를 향하는 사각형 하나다. 뷰 행렬의 첫 두 행이 월드 공간에서 본 카메라의 오른쪽·위쪽 방향이므로, 이 두 벡터로 사각형의 모서리를 만든다.
+그 위에 조명과 깊이 처리, 블렌딩을 더하면서 표면의 색과 방향, 물체의 가림 관계를 나누어 다뤘습니다. 특히 노멀 매핑에서는 텍스처에서 읽은 방향을 그대로 쓰는 것이 아니라, 빛의 방향과 같은 좌표 공간으로 옮겨야 조명을 계산할 수 있었습니다. 표면에 무늬를 입히는 텍스처링에서 출발해 표면의 방향까지 텍스처로 표현하는 데로 범위를 넓혔습니다.
 
-```cpp
-glProgramUniform3f(g_glowProgram, 1, view.m[0], view.m[4], view.m[8]);   // 카메라 오른쪽
-glProgramUniform3f(g_glowProgram, 2, view.m[1], view.m[5], view.m[9]);   // 카메라 위쪽
-```
-
-```glsl
-// 정점 셰이더: 모서리 (±1, ±1)을 카메라 평면에 펼침
-gl_Position = uViewProjection * vec4((uCameraRight * aCorner.x + uCameraUp * aCorner.y) * uRadius, 1.0);
-
-// 프래그먼트 셰이더: 중심에서 멀어질수록 투명
-float falloff = length(vCorner);
-if (falloff > 1.0) discard;
-oColor = mix(vec4(1.0, 0.45, 0.08, 0.65), vec4(1.0, 0.2, 0.02, 0.0), falloff);
-```
-
-블렌딩은 `GL_SRC_ALPHA, GL_ONE`(가산)이다. 배경에 색을 더하기만 하므로 별과 겹치는 부분이 어두워지지 않는다. 깊이를 쓰지 않으므로 이후에 그리는 태양 구가 광채에 가려지지 않는다.
-
-### 반투명 기하
-
-토성 고리는 단색 알파 0.7, 궤도선과 자전축은 알파 0.3~0.45로 `GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA` 블렌딩을 쓴다. 반투명 물체를 정렬하지 않고 행성 순서대로 그리기 때문에, 고리 뒤에 있는 물체가 고리보다 나중에 그려지면 깊이 검사에 걸려 고리 너머로 보이지 않는다.
-
-<p align="center">
-  <img src="Docs/Sun.gif" alt="태양과 가산 블렌딩 광채" width="49%">
-  <img src="Docs/Saturn.gif" alt="알파 블렌딩으로 그린 토성 고리" width="49%">
-</p>
-
-<br>
-
-## 빌드 및 실행
-
-필요한 환경은 Windows 10/11, Visual Studio 2026(C++ 데스크톱 개발 워크로드, v145 툴셋), vcpkg, OpenGL 4.6 지원 드라이버다. GLEW와 stb는 `vcpkg.json` 매니페스트로 첫 빌드 때 설치된다. vcpkg는 Visual Studio에 포함된 것을 쓰거나, 별도 설치 후 `vcpkg integrate install`을 실행한다.
-
-1. `SolarSystem.sln`을 연다.
-2. 구성을 `Release`, 플랫폼을 `x64`로 바꾼다.
-3. Ctrl + F5로 실행한다.
-
-빌드 후 `Resources` 폴더가 실행 파일 옆으로 복사되고, 텍스처와 모델은 실행 파일 기준 상대 경로로 읽는다. CMake를 쓸 때는 `VCPKG_ROOT` 환경 변수를 지정하고 다음을 실행한다.
-
-```bash
-cmake --preset x64-release
-cmake --build Build/x64-release
-```
-
-조작은 마우스로 시점을 돌리고 W/A/S/D로 수평 이동, E/Q로 상하 이동, P/O로 이동 속도를 조절한다.
-
-> [!TIP]
-> 내장·외장 GPU가 함께 있는 노트북에서는 Windows 설정의 **시스템 > 디스플레이 > 그래픽**에서 `SolarSystem.exe`를 고성능 GPU로 지정한다.
-
-<br>
-
-## 한계
-
-- 소행성대의 GPU 비용은 삼각형 수에 비례하지만, 거리별 LOD나 절두체 컬링이 없어 화면에서 1~2픽셀인 바위도 삼각형 3,998개를 모두 그린다.
-- 바위 메시는 반지름만 정규화하고 중심을 원점으로 옮기지 않아서, 자전할 때 회전 중심이 메시 중심에서 약간 벗어난다.
-- 조명은 확산광과 주변광뿐이며 정반사, 그림자, 대기 산란이 없다.
-- 반투명 물체를 깊이 순으로 정렬하지 않는다.
-- 반지름 최솟값 0.55 때문에 수성·금성·지구·화성이 같은 크기로 보인다.
-
-<br>
-
-## 고지
-
-학습 목적의 프로젝트다. 행성 텍스처와 바위 모델(`Rock1.obj`, `tex_low_*`)의 저작권은 각 원작자에게 있다. 행성의 공전·자전 주기와 기울기는 [한국천문연구원 천문우주지식정보](https://astro.kasi.re.kr/learning/pageView/5116)를 참고했다.
+소행성대를 그리면서 찾아 적용한 인스턴싱은 측정 결과를 해석하는 계기도 됐습니다. 이번 비교에서는 CPU의 드로우 제출 구간이 줄었지만 FPS 향상으로 이어지지는 않았습니다. 드로우 호출을 합친 효과와 GPU가 장면을 처리하는 비용을 구분해 볼 수 있었고, 기법을 적용했다는 사실만으로 전체 성능이 좋아졌다고 판단할 수 없다는 점을 확인했습니다.

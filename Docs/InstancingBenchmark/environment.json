@@ -1,0 +1,19 @@
+{
+  "cpu": "AMD Ryzen 9 7945HX with Radeon Graphics",
+  "gpus": [
+    {
+      "Name": "AMD Radeon(TM) 610M",
+      "DriverVersion": "32.0.21041.1000"
+    },
+    {
+      "Name": "NVIDIA GeForce RTX 4060 Laptop GPU",
+      "DriverVersion": "32.0.16.1714"
+    }
+  ],
+  "compiler_path": "C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.51.36231\\bin\\Hostx64\\x64\\cl.exe",
+  "compiler_version": "19.51.36260.0",
+  "source_commit": "0a35574340bd9a171c0a023fb5215e7f9ac9faf1",
+  "measurement_date_kst": "2026-10-18",
+  "source_sha256": "5B801FCCE62B7A1D3C549049F7EF9C8E87FF9734C3B26B7E243E63F5D68F7DBC",
+  "benchmark_sha256": "68F448DBEEE1433188C7D70BEB34B4B2CE8B840F7AAC5135EFA6EC1B1180886D"
+}
