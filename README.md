@@ -2,13 +2,13 @@
 
 # 3D Solar System Simulator
 
-<p align="center"><img src="Docs/Hero.gif" alt="태양과 여덟 행성, 소행성대가 함께 움직이는 태양계 전체 화면" width="840"></p>
-
 **OpenGL로 구현한 3D 태양계 텀프로젝트**
 
 ![C++20](https://img.shields.io/badge/C%2B%2B-20-00599C?logo=cplusplus&logoColor=white)
 ![OpenGL](https://img.shields.io/badge/OpenGL-4.6%20Core-5586A4?logo=opengl&logoColor=white)
 ![Windows](https://img.shields.io/badge/Platform-Windows-0078D4)
+
+<p align="center"><img src="Docs/Hero.gif" alt="태양과 여덟 행성, 소행성대가 함께 움직이는 태양계 전체 화면" width="840"></p>
 
 </div>
 
