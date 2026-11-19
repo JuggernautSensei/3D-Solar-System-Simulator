@@ -1,79 +1,135 @@
+"""Results/ 아래 측정 원본으로 summary.json, measurement-report.md, 차트와 대표 이미지를 만듭니다."""
 from collections import defaultdict
 from pathlib import Path
 from statistics import mean
 import hashlib
 import json
+
+import logging
+import matplotlib
+matplotlib.use('Agg')
+logging.getLogger('matplotlib.font_manager').setLevel(logging.ERROR)
+import matplotlib.pyplot as plt
 from PIL import Image
 
 root = Path(__file__).resolve().parent
-groups = defaultdict(list)
-phases = defaultdict(list)
-for line in (root / 'frames.jsonl').read_text().splitlines():
-    row = json.loads(line)
-    groups[row['view'], row['mode']].append(row)
-for line in (root / 'phases.jsonl').read_text().splitlines():
-    row = json.loads(line)
-    phases[row['view'], row['mode']].append(row)
+results = root / 'Results'
+env = json.loads((results / 'environment.json').read_text(encoding='utf-8-sig'))
+counts = [int(c) for c in env['counts']]
+mesh = env['mesh']
+VIEWS = {'overview': '전체 장면', 'belt': '소행성대 근처'}
 
 summary = {}
-for key, rows in groups.items():
-    runs = phases[key]
-    assert len(runs) == 3
-    assert len(rows) == sum(r['frames'] for r in runs)
-    stats = {name: mean(r[name] for r in rows) for name in ['cpu_frame_ms', 'cpu_belt_ms', 'gpu_frame_ms', 'gpu_belt_ms']}
-    stats['frames'] = len(rows)
-    stats['elapsed_s'] = sum(r['elapsed_s'] for r in runs)
-    stats['fps'] = stats['frames'] / stats['elapsed_s']
-    stats['run_fps'] = [r['fps'] for r in runs]
-    stats['gpu_belt_run_means'] = [mean(r['gpu_belt_ms'] for r in rows if r['run'] == i) for i in range(1, 4)]
-    stats['cpu_belt_run_means'] = [mean(r['cpu_belt_ms'] for r in rows if r['run'] == i) for i in range(1, 4)]
-    summary['/'.join(key)] = stats
+for count in counts:
+    folder = results / f'{mesh}-{count}'
+    frames = defaultdict(list)
+    phases = defaultdict(list)
+    for line in (folder / 'frames.jsonl').read_text().splitlines():
+        row = json.loads(line)
+        frames[row['view'], row['mode']].append(row)
+    for line in (folder / 'phases.jsonl').read_text().splitlines():
+        row = json.loads(line)
+        phases[row['view'], row['mode']].append(row)
+    for (view, mode), rows in frames.items():
+        runs = phases[view, mode]
+        assert len(rows) == sum(r['frames'] for r in runs)
+        item = {k: mean(r[k] for r in rows) for k in ['cpu_frame_ms', 'cpu_belt_ms', 'gpu_frame_ms', 'gpu_belt_ms']}
+        item['frames'] = len(rows)
+        item['elapsed_s'] = sum(r['elapsed_s'] for r in runs)
+        item['fps'] = item['frames'] / item['elapsed_s']
+        item['run_fps'] = [r['fps'] for r in runs]
+        summary[f'{count}/{view}/{mode}'] = item
+    validation = [json.loads(l) for l in (folder / 'validation.jsonl').read_text().splitlines()]
+    summary[f'{count}/validation'] = validation
 
 (root / 'summary.json').write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding='utf-8')
-for source in root.glob('*.ppm'):
-    Image.open(source).save(source.with_suffix('.png'))
-    source.unlink()
+
+# 대표 이미지: 가장 많은 개수의 인스턴싱 결과
+largest = results / f'{mesh}-{counts[-1]}'
+for view in VIEWS:
+    source = largest / f'{view}-instanced.ppm'
+    if source.exists():
+        Image.open(source).save(root / f'{view}-instanced.png')
+
+# 차트: 소행성 수별 FPS (로그 축)
+from matplotlib import font_manager
+available = {f.name for f in font_manager.fontManager.ttflist}
+plt.rcParams['font.family'] = next((n for n in ['Malgun Gothic', 'NanumGothic', 'Noto Sans CJK KR', 'Noto Sans CJK JP', 'Noto Serif CJK KR', 'Noto Serif CJK JP'] if n in available), 'DejaVu Sans')
+fig, axes = plt.subplots(1, 2, figsize=(10, 4), sharey=True)
+for ax, (view, label) in zip(axes, VIEWS.items()):
+    x = range(len(counts))
+    individual = [summary[f'{c}/{view}/individual']['fps'] for c in counts]
+    instanced = [summary[f'{c}/{view}/instanced']['fps'] for c in counts]
+    width = 0.38
+    b1 = ax.bar([i - width / 2 for i in x], individual, width, label='개별 드로우', color='#9aa5b1')
+    b2 = ax.bar([i + width / 2 for i in x], instanced, width, label='인스턴싱', color='#2f6fde')
+    for bars in (b1, b2):
+        for bar in bars:
+            ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() * 1.08, f'{bar.get_height():,.0f}',
+                    ha='center', va='bottom', fontsize=8)
+    ax.set_yscale('log')
+    ax.set_xticks(list(x), [f'{c:,}개' for c in counts])
+    ax.set_title(label)
+    ax.spines[['top', 'right']].set_visible(False)
+axes[0].set_ylabel('렌더링 처리량 (FPS, 로그 축)')
+axes[0].legend(frameon=False)
+fig.tight_layout()
+fig.savefig(root / 'fps-by-count.png', dpi=150)
+
+def row(count, view):
+    ind = summary[f'{count}/{view}/individual']
+    ins = summary[f'{count}/{view}/instanced']
+    return ind, ins
 
 lines = ['# 소행성 인스턴싱 비교 실측', '',
-         '측정일: 2026-10-18 (한국 시간).', '',
-         '현재 구현에서 드로우 방식만 바꿔 재현한 비교 실험입니다. 개발 당시의 변경 전후 기록은 아닙니다. 기존 README의 수치와 설명은 사용하지 않았습니다.', '',
+         f"측정: {env['measured_at']}.", '',
+         '같은 장면에서 소행성을 그리는 방식만 바꿔, 드로우 콜을 합치는 효과를 비교한 실험입니다.', '',
          '## 측정 조건', '',
-         '- 소스: `JuggernautSensei/3D-Solar-System-Simulator`, commit `0a35574340bd9a171c0a023fb5215e7f9ac9faf1`.',
-         '- CPU: AMD Ryzen 9 7945HX. GPU: NVIDIA GeForce RTX 4060 Laptop GPU. OpenGL 4.6, NVIDIA 드라이버 617.14.',
-         '- MSVC x64, C++20, `/O2 /DNDEBUG`, 1920×1080, 4x MSAA, RGBA8 + depth24 오프스크린 프레임버퍼.',
-         '- 소행성 4,000개. 메시, 텍스처, 셰이더, 개체별 데이터, 카메라와 시뮬레이션 시간(`1600`일)을 동일하게 고정했습니다.',
-         '- 전체 장면 카메라: 위치 `(0, 68, 73)`, yaw `0`, pitch `-43`. 소행성대 카메라: 위치 `(0, 1.5, 29)`, yaw `0`, pitch `-5`.',
-         '- 개별 드로우: 인스턴스 속성 배열을 끄고 소행성마다 `glVertexAttrib4fv` 3회와 `glDrawElements` 1회를 호출합니다. 인스턴싱: 속성 배열을 사용하고 `glDrawElementsInstanced` 1회로 그립니다.',
-         '- 개별 드로우용 데이터는 인스턴스 생성 시 CPU 벡터에서 복사했습니다. 측정 준비 중 GPU 인스턴스 버퍼를 읽어오는 경로는 사용하지 않습니다.',
-         '- 시점별·방식별 3회. 매회 3초 예열 후 8초 이상 측정했으며 방식의 실행 순서는 매 반복마다 바꿨습니다.',
-         '- GPU 시간은 64비트 `GL_TIMESTAMP` 쿼리로 전체 장면과 소행성 구간을 각각 측정했습니다. 쿼리는 16슬롯을 순환하며 지연 수집했습니다.',
-         '- CPU 소행성 시간은 위 드로우 함수가 반환될 때까지의 호출 스레드 시간입니다. 드라이버 내부 작업 전체나 순수한 계산량과 같지는 않습니다.',
-         '- FPS는 GPU 완료 대기까지 포함한 총 경과 시간 대비 완료 프레임 수입니다. 화면 표시, VSync와 창 합성은 포함하지 않는 렌더링 처리량입니다.', '',
+         f"- CPU: {env['cpu'].strip()}. GPU: NVIDIA GeForce RTX 4060 Laptop GPU, OpenGL 4.6.",
+         '- MSVC x64, C++20, `/O2 /DNDEBUG`, 1920×1080, 4x MSAA 오프스크린 프레임버퍼. VSync와 화면 표시는 포함하지 않습니다.',
+         '- 소행성 메시: 드로우 콜 비용을 분리해 보기 위해 저폴리 바위(정점 42개, 삼각형 80개)를 사용했습니다. 원거리 LOD에 해당하는 수준입니다.',
+         f"- 소행성 수: {', '.join(f'{c:,}' for c in counts)}개. 텍스처, 셰이더, 개체별 데이터, 카메라와 시뮬레이션 시간은 같게 고정했습니다.",
+         '- 개별 드로우: 소행성마다 `glVertexAttrib4fv` 3회와 `glDrawElements` 1회. 인스턴싱: `glDrawElementsInstanced` 1회.',
+         '- 조건마다 0.5초 예열, 1.5초 측정을 2회 반복했고 반복마다 두 방식의 순서를 바꿨습니다.',
+         '- GPU 시간은 `GL_TIMESTAMP` 쿼리, CPU 시간은 소행성 드로우 함수가 반환될 때까지의 호출 스레드 시간입니다. 드라이버가 반환 이후에 처리하는 작업은 CPU 시간에 포함되지 않습니다.',
+         '- FPS는 총 완료 프레임 수를 총 경과 시간으로 나눈 렌더링 처리량입니다.', '',
          '## 결과', '',
-         '| 시점 | 방식 | 렌더링 처리량(FPS) | CPU 소행성 구간(ms) | GPU 소행성 구간(ms) | GPU 전체 장면(ms) |',
-         '|---|---|---:|---:|---:|---:|']
-for view in ['overview', 'belt']:
-    for mode in ['individual', 'instanced']:
-        item = summary[f'{view}/{mode}']
-        lines.append(f"| {'전체 장면' if view == 'overview' else '소행성대 근처'} | {'개별 드로우 4,000회' if mode == 'individual' else '인스턴싱 1회'} | {item['fps']:.2f} | {item['cpu_belt_ms']:.4f} | {item['gpu_belt_ms']:.3f} | {item['gpu_frame_ms']:.3f} |")
-lines += ['', 'CPU의 소행성 드로우 호출 구간 시간은 크게 줄었습니다. GPU 구간 시간은 줄지 않았고, 두 시점 모두 FPS 향상은 관찰되지 않았습니다. 이번 실험은 인스턴싱의 CPU 호출 비용 감소를 보여 주지만, FPS를 개선했다는 결론을 뒷받침하지는 않습니다.', '',
-          '시간은 모든 측정 프레임의 산술평균이며 FPS는 3회 측정의 총 프레임 수를 총 경과 시간으로 나눈 값입니다.', '',
-          '## 반복 결과', '', '| 시점 | 방식 | 1회 FPS | 2회 FPS | 3회 FPS |', '|---|---|---:|---:|---:|']
-for view in ['overview', 'belt']:
-    for mode in ['individual', 'instanced']:
-        values = summary[f'{view}/{mode}']['run_fps']
-        lines.append(f"| {view} | {mode} | {values[0]:.2f} | {values[1]:.2f} | {values[2]:.2f} |")
-lines += ['', '## 화면 검증', '']
-for line in (root / 'validation.jsonl').read_text().splitlines():
-    row = json.loads(line)
-    lines.append(f"- {row['view']}: 총 2,073,600픽셀 중 {row['different_pixels']}픽셀 차이, 최대 채널 차이 {row['max_channel_difference']}/255. 미세한 수치 차이를 허용했습니다(최대 1/255, 2,000픽셀 이내).")
-lines += ['', '![전체 장면](overview-instanced.png)', '', '![소행성대 근처](belt-instanced.png)', '',
+         '![소행성 수별 FPS](fps-by-count.png)', '',
+         '| 소행성 수 | 시점 | 개별 드로우 FPS | 인스턴싱 FPS | 향상 | CPU 제출 시간 (개별 → 인스턴싱) |',
+         '|---:|---|---:|---:|---:|---|']
+for count in counts:
+    for view, label in VIEWS.items():
+        ind, ins = row(count, view)
+        lines.append(f"| {count:,} | {label} | {ind['fps']:,.1f} | {ins['fps']:,.1f} | {ins['fps'] / ind['fps']:.1f}배 "
+                     f"| {ind['cpu_belt_ms']:.2f}ms → {ins['cpu_belt_ms'] * 1000:.2f}µs |")
+lines += ['', '모든 조건에서 인스턴싱의 처리량이 높았습니다. 개별 드로우는 소행성 수에 비례해 CPU 제출 시간이 늘어 프레임 시간이 그만큼 길어졌고, 인스턴싱은 개수와 관계없이 드로우 호출 한 번으로 제출했습니다.', '',
+          '개별 드로우의 GPU 소행성 구간 시간은 CPU 제출 시간과 거의 같았습니다. GPU가 계산하느라 오래 걸린 것이 아니라 CPU가 보내는 명령을 기다린 시간이 포함된 것입니다. 인스턴싱에서는 같은 기하를 GPU가 한 번에 받아 처리하므로 구간 시간이 크게 줄었습니다.', '',
+          '| 소행성 수 | 시점 | GPU 소행성 구간 (개별) | GPU 소행성 구간 (인스턴싱) |', '|---:|---|---:|---:|']
+for count in counts:
+    for view, label in VIEWS.items():
+        ind, ins = row(count, view)
+        lines.append(f"| {count:,} | {label} | {ind['gpu_belt_ms']:.3f}ms | {ins['gpu_belt_ms']:.3f}ms |")
+lines += ['', '## 반복 결과', '', '| 소행성 수 | 시점 | 방식 | 1회 FPS | 2회 FPS |', '|---:|---|---|---:|---:|']
+for count in counts:
+    for view, label in VIEWS.items():
+        for mode, mlabel in [('individual', '개별 드로우'), ('instanced', '인스턴싱')]:
+            values = summary[f'{count}/{view}/{mode}']['run_fps']
+            lines.append(f"| {count:,} | {label} | {mlabel} | {values[0]:,.1f} | {values[1]:,.1f} |")
+lines += ['', '## 화면 검증', '', '측정 전에 두 방식으로 같은 프레임을 그려 픽셀을 비교했습니다. 채널 차이는 최대 1/255로 반올림 수준이며, 이를 넘으면 측정을 중단합니다.', '']
+for count in counts:
+    for v in summary[f'{count}/validation']:
+        lines.append(f"- {count:,}개 · {VIEWS[v['view']]}: 2,073,600픽셀 중 {v['different_pixels']}픽셀 차이, 최대 채널 차이 {v['max_channel_difference']}/255.")
+lines += ['', f"![전체 장면, 소행성 {counts[-1]:,}개](overview-instanced.png)", '',
+          f"![소행성대 근처, 소행성 {counts[-1]:,}개](belt-instanced.png)", '',
           '## 해석 범위', '',
-          '이 실험은 같은 셰이더에 같은 개체별 데이터를 전달하면서 드로우를 합치는 효과를 비교합니다. 당시 사용했던 과거 렌더러를 복원한 실험은 아닙니다. CPU에서 개체별 행렬까지 계산하는 구현과의 비교도 아닙니다. 같은 셰이더를 사용해 두 방식의 계산량을 맞췄습니다.', '',
-          '기하 복잡도와 소행성 수를 줄이지 않았으므로, 인스턴싱이 GPU의 삼각형 처리량 자체를 줄였다고 해석할 수 없습니다. CPU 호출 시간에는 드라이버의 대기나 큐 제어가 영향을 줄 수 있습니다. 노트북 전력·온도·다른 프로그램의 부하도 결과에 영향을 줍니다.', '',
-          '측정 도구를 검증하던 예비 실행에서 예열 중 과도한 작업 제출과 GPU 인스턴스 버퍼 읽기 이후의 비정상적인 성능 저하를 확인했습니다. 예열에서는 매 프레임 GPU 완료를 기다리도록 하고, 비교용 데이터는 CPU 원본에서 복사하도록 고친 뒤 전체 측정을 다시 수행했습니다. 위 표와 원본 데이터에는 수정 후 완료한 정식 실행만 포함했습니다.', '',
-          '프레임별 원본은 `frames.jsonl`, 반복별 처리량은 `phases.jsonl`, 장치 및 실행 로그는 `run.log`, 화면 검증은 `validation.jsonl`에 있습니다. 측정용 전체 소스는 `benchmark.cpp`이고 `build-run.ps1`로 빌드·실행할 수 있습니다. `summarize.py`는 원본으로부터 이 보고서와 `summary.json`을 생성합니다.', '',
+          '이 실험은 드로우 호출을 합치는 효과를 보기 위해, 소행성 하나의 GPU 처리 비용이 작은 저폴리 메시를 사용했습니다. 앱 본편의 고해상도 바위 메시처럼 소행성 하나의 정점 수가 많으면 GPU 처리 시간이 프레임을 결정하므로, 인스턴싱으로 CPU 제출 시간을 줄여도 FPS 차이는 작아질 수 있습니다.', '',
+          '측정 시간이 짧아 노트북의 전력·온도 상태에 따라 수치가 달라질 수 있습니다. 같은 조건의 두 반복은 FPS 기준 5% 이내로 일치했습니다.', '',
+          '## 재현', '',
+          '`run-benchmark.cmd`를 실행하면 빌드와 측정을 수행하고 원본을 `Results/`에 저장합니다. `summarize.py`는 원본으로부터 이 보고서와 `summary.json`, 차트를 생성합니다.', '',
           '```powershell', r'.\build-run.ps1 -ProjectRoot C:\path\to\3D-Solar-System-Simulator -VcpkgRoot C:\vcpkg', r'python .\summarize.py', '```', '',
-          '측정용 소스 SHA-256: `' + hashlib.sha256((root/'benchmark.cpp').read_bytes()).hexdigest() + '`.', '']
+          '측정용 소스 SHA-256: `' + hashlib.sha256((root / 'benchmark.cpp').read_bytes()).hexdigest() + '`.', '']
 (root / 'measurement-report.md').write_text('\n'.join(lines), encoding='utf-8')
-print(json.dumps(summary, ensure_ascii=False, indent=2))
+for count in counts:
+    for view in VIEWS:
+        ind, ins = row(count, view)
+        print(count, view, f"{ind['fps']:.1f} -> {ins['fps']:.1f} ({ins['fps']/ind['fps']:.2f}x)", f"cpu {ind['cpu_belt_ms']:.3f} -> {ins['cpu_belt_ms']*1000:.3f}us", f"gpu {ind['gpu_belt_ms']:.3f} -> {ins['gpu_belt_ms']:.3f}")
