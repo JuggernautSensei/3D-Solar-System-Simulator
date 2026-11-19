@@ -921,13 +921,14 @@ Mesh CreateQuadMesh()
 // ===========================================
 
 // 숫자 키 1~4로 고르는 소행성 수입니다. 인스턴스 버퍼는 최대 개수만큼 한 번 만들고 앞에서부터 사용합니다.
-constexpr std::array kAsteroidCountPresets = { 1'000, 10'000, 50'000, 100'000 };
+// 기본 장면은 4,000개이고, 그보다 많으면 원거리 LOD 수준의 저폴리 바위로 그립니다.
+constexpr std::array kAsteroidCountPresets = { 4'000, 10'000, 50'000, 100'000 };
 constexpr int        kMaxAsteroidCount     = kAsteroidCountPresets.back();
+constexpr int        kDetailedRockMaxCount = kAsteroidCountPresets.front();
 constexpr int        kAsteroidStride       = 12;   // 개체당 float 12개 (aOrbit, aSpin, aScale)
 
-int  g_asteroidCount   = kMaxAsteroidCount;
-bool g_useInstancing   = true;    // I 키: 인스턴싱 켜기/끄기
-bool g_useDetailedRock = false;   // M 키: 저폴리 바위(삼각형 80개) <-> 원본 바위(Rock1.obj)
+int  g_asteroidCount = kAsteroidCountPresets.front();
+bool g_useInstancing = true;   // I 키: 인스턴싱 켜기/끄기
 
 Mesh   g_lowPolyRockMesh         = {};
 Mesh   g_detailedRockMesh        = {};
@@ -1246,7 +1247,7 @@ void AttachAsteroidInstances(const Mesh& _mesh)
 
 const Mesh& GetAsteroidMesh()
 {
-    return g_useDetailedRock ? g_detailedRockMesh : g_lowPolyRockMesh;
+    return g_asteroidCount <= kDetailedRockMaxCount ? g_detailedRockMesh : g_lowPolyRockMesh;
 }
 
 int GetAsteroidDrawCalls()
@@ -1528,11 +1529,11 @@ void DrawHud()
     y = graphY + graphH + 40.f * unit;
 
     AddHudText(left + padding, y, 2.f * unit,
-               g_useDetailedRock ? std::format("rock mesh: detailed ({} triangles)", WithCommas(GetAsteroidMesh().count / 3))
+               g_asteroidCount <= kDetailedRockMaxCount ? std::format("rock mesh: detailed ({} triangles)", WithCommas(GetAsteroidMesh().count / 3))
                                  : std::format("rock mesh: low-poly ({} triangles)", GetAsteroidMesh().count / 3),
                kHudDimColor);
     y += 26.f * unit;
-    AddHudText(left + padding, y, 2.f * unit, "[I] instancing  [1-4] count  [M] mesh  [H] hide", kHudDimColor);
+    AddHudText(left + padding, y, 2.f * unit, "[I] instancing  [1-4] 4K/10K/50K/100K  [H] hide", kHudDimColor);
 
     glNamedBufferData(g_hudVbo, static_cast<GLsizeiptr>(g_hudVertices.size() * sizeof(HudVertex)), g_hudVertices.data(), GL_STREAM_DRAW);
 
@@ -1748,10 +1749,6 @@ void OnKeyPressed(const WPARAM _key)
             g_useInstancing = !g_useInstancing;
             ResetFpsWindow();
             break;
-        case 'M':
-            g_useDetailedRock = !g_useDetailedRock;
-            ResetFpsWindow();
-            break;
         case 'H':
             g_showHud = !g_showHud;
             break;
@@ -1778,17 +1775,14 @@ struct DemoPhase
 {
     const char* name;
     bool        instancing;
-    bool        detailedRock;
     float       duration;
     bool        record;
 };
 
 constexpr std::array kDemoPhases = {
-    DemoPhase { "warmup", true, false, 2.f, false },
-    DemoPhase { "individual", false, false, 8.f, true },
-    DemoPhase { "instanced", true, false, 8.f, true },
-    DemoPhase { "detailed-individual", false, true, 4.f, false },
-    DemoPhase { "detailed-instanced", true, true, 4.f, false },
+    DemoPhase { "warmup", true, 2.f, false },
+    DemoPhase { "individual", false, 8.f, true },
+    DemoPhase { "instanced", true, 8.f, true },
 };
 
 constexpr float kDemoCaptureRate   = 30.f;
@@ -1963,7 +1957,6 @@ bool StartDemo(const std::filesystem::path& _directory)
                    << "  \"viewport\": [" << g_viewportWidth << ", " << g_viewportHeight << "],\n"
                    << "  \"asteroids\": " << kMaxAsteroidCount << ",\n"
                    << "  \"low_poly_triangles\": " << g_lowPolyRockMesh.count / 3 << ",\n"
-                   << "  \"detailed_triangles\": " << g_detailedRockMesh.count / 3 << ",\n"
                    << "  \"capture_rate\": " << kDemoCaptureRate << ",\n"
                    << "  \"phases\": [";
 
@@ -1981,7 +1974,6 @@ void EnterDemoPhase(const size_t _phase)
     g_demo.lastSlot  = -1;
     g_demo.frameTimes.clear();
     g_useInstancing   = kDemoPhases[_phase].instancing;
-    g_useDetailedRock = kDemoPhases[_phase].detailedRock;
     g_frameHistory    = {};
     ResetFpsWindow();
     std::cout << "DEMO phase " << kDemoPhases[_phase].name << std::endl;
@@ -2004,8 +1996,8 @@ void FinishDemoPhase()
     const double fps = sum > 0. ? static_cast<double>(sorted.size()) * 1000. / sum : 0.;
 
     g_demo.summary << (g_demo.firstSummary ? "\n" : ",\n")
-                   << std::format("    {{ \"name\": \"{}\", \"instancing\": {}, \"detailed_rock\": {}, \"frames\": {}, \"fps\": {:.2f}, \"mean_ms\": {:.3f}, \"p50_ms\": {:.3f}, \"p95_ms\": {:.3f}, \"draw_calls\": {} }}",
-                                  phase.name, phase.instancing, phase.detailedRock, sorted.size(), fps,
+                   << std::format("    {{ \"name\": \"{}\", \"instancing\": {}, \"frames\": {}, \"fps\": {:.2f}, \"mean_ms\": {:.3f}, \"p50_ms\": {:.3f}, \"p95_ms\": {:.3f}, \"draw_calls\": {} }}",
+                                  phase.name, phase.instancing, sorted.size(), fps,
                                   sorted.empty() ? 0. : sum / static_cast<double>(sorted.size()), percentile(0.5), percentile(0.95),
                                   phase.instancing ? 1 : kMaxAsteroidCount);
     g_demo.firstSummary = false;
