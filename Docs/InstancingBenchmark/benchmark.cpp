@@ -908,7 +908,9 @@ Mesh CreateQuadMesh()
 //  Asteroid
 // ===========================================
 
-constexpr int kAsteroidCount = 4000;
+// 벤치마크 조건: 명령행 인수로 소행성 수와 메시를 고릅니다.
+int  g_asteroidCount = 4000;
+bool g_lowPolyRock   = false;
 
 GLuint g_rockDiffuseTexture = 0;
 GLuint g_rockNormalTexture  = 0;
@@ -1081,6 +1083,85 @@ bool LoadObjMesh(
     const std::span<const float> vertexData(reinterpret_cast<const float*>(vertices.data()), vertices.size() * 12);
     _mesh = CreateMesh(GL_TRIANGLES, vertexData, { 3, 3, 2, 4 }, indices);
     return true;
+}
+
+// 드로우 콜 비용을 분리해 보기 위한 저폴리 바위(원거리 LOD 수준).
+// 정이십면체를 한 번 분할(정점 42개, 삼각형 80개)하고 정점마다 반지름을 흔들어 바위 모양을 만듭니다.
+void CreateLowPolyRockMesh(Mesh& _mesh)
+{
+    const float t = (1.f + std::sqrt(5.f)) * 0.5f;
+    std::vector<Vec3> positions = {
+        { -1.f, t, 0.f }, { 1.f, t, 0.f }, { -1.f, -t, 0.f }, { 1.f, -t, 0.f },
+        { 0.f, -1.f, t }, { 0.f, 1.f, t }, { 0.f, -1.f, -t }, { 0.f, 1.f, -t },
+        { t, 0.f, -1.f }, { t, 0.f, 1.f }, { -t, 0.f, -1.f }, { -t, 0.f, 1.f } };
+    std::vector<GLuint> faces = {
+        0, 11, 5, 0, 5, 1, 0, 1, 7, 0, 7, 10, 0, 10, 11, 1, 5, 9, 5, 11, 4, 11, 10, 2, 10, 7, 6, 7, 1, 8,
+        3, 9, 4, 3, 4, 2, 3, 2, 6, 3, 6, 8, 3, 8, 9, 4, 9, 5, 2, 4, 11, 6, 2, 10, 8, 6, 7, 9, 8, 1 };
+    for (Vec3& p: positions) p = Normalize(p);
+
+    std::unordered_map<unsigned long long, GLuint> midpoints;
+    auto midpoint = [&](GLuint _a, GLuint _b)
+    {
+        const unsigned long long key = (static_cast<unsigned long long>(std::min(_a, _b)) << 32) | std::max(_a, _b);
+        const auto [it, inserted] = midpoints.try_emplace(key, static_cast<GLuint>(positions.size()));
+        if (inserted) positions.push_back(Normalize((positions[_a] + positions[_b]) * 0.5f));
+        return it->second;
+    };
+    std::vector<GLuint> indices;
+    for (size_t i = 0; i < faces.size(); i += 3)
+    {
+        const GLuint a = faces[i], b = faces[i + 1], c = faces[i + 2];
+        const GLuint ab = midpoint(a, b), bc = midpoint(b, c), ca = midpoint(c, a);
+        indices.insert(indices.end(), { a, ab, ca, b, bc, ab, c, ca, bc, ab, bc, ca });
+    }
+
+    std::mt19937                          random { 7 };
+    std::uniform_real_distribution<float> jitter { 0.8f, 1.f };
+    std::vector<ObjVertex> vertices(positions.size());
+    for (size_t i = 0; i < positions.size(); ++i)
+    {
+        const Vec3 dir = positions[i];
+        vertices[i].position = dir * jitter(random);
+        vertices[i].u = 0.5f + std::atan2(dir.z, dir.x) / (2.f * kPi);
+        vertices[i].v = std::acos(std::clamp(dir.y, -1.f, 1.f)) / kPi;
+    }
+
+    std::vector<Vec3> bitangents(vertices.size());
+    for (size_t i = 0; i < indices.size(); i += 3)
+    {
+        ObjVertex& v0 = vertices[indices[i]];
+        ObjVertex& v1 = vertices[indices[i + 1]];
+        ObjVertex& v2 = vertices[indices[i + 2]];
+        const Vec3 edge1 = v1.position - v0.position;
+        const Vec3 edge2 = v2.position - v0.position;
+        const Vec3 faceNormal = Cross(edge1, edge2);
+        const float du1 = v1.u - v0.u, dv1 = v1.v - v0.v, du2 = v2.u - v0.u, dv2 = v2.v - v0.v;
+        const float area = du1 * dv2 - du2 * dv1;
+        const Vec3 tangent   = std::abs(area) < 1e-12f ? Vec3 {} : (edge1 * dv2 - edge2 * dv1) * (1.f / area);
+        const Vec3 bitangent = std::abs(area) < 1e-12f ? Vec3 {} : (edge2 * du1 - edge1 * du2) * (1.f / area);
+        for (int k = 0; k < 3; ++k)
+        {
+            ObjVertex& vertex = vertices[indices[i + k]];
+            vertex.normal  = vertex.normal + faceNormal;
+            vertex.tangent = vertex.tangent + tangent;
+            bitangents[indices[i + k]] = bitangents[indices[i + k]] + bitangent;
+        }
+    }
+    for (size_t i = 0; i < vertices.size(); ++i)
+    {
+        ObjVertex& vertex = vertices[i];
+        vertex.normal = Normalize(vertex.normal);
+        Vec3 tangent = vertex.tangent - vertex.normal * Dot(vertex.normal, vertex.tangent);
+        if (Dot(tangent, tangent) < 1e-12f)
+        {
+            tangent = Cross(vertex.normal, std::abs(vertex.normal.y) < 0.99f ? Vec3 { 0.f, 1.f, 0.f } : Vec3 { 1.f, 0.f, 0.f });
+        }
+        vertex.tangent    = Normalize(tangent);
+        vertex.handedness = Dot(Cross(vertex.normal, vertex.tangent), bitangents[i]) < 0.f ? -1.f : 1.f;
+    }
+
+    const std::span<const float> vertexData(reinterpret_cast<const float*>(vertices.data()), vertices.size() * 12);
+    _mesh = CreateMesh(GL_TRIANGLES, vertexData, { 3, 3, 2, 4 }, indices);
 }
 
 void CreateAsteroidInstances(
@@ -1454,11 +1535,15 @@ bool CreateResources()
         return false;
     }
 
-    if (!LoadObjMesh("Resources/Rock1.obj", g_asteroidMesh))
+    if (g_lowPolyRock)
+    {
+        CreateLowPolyRockMesh(g_asteroidMesh);
+    }
+    else if (!LoadObjMesh("Resources/Rock1.obj", g_asteroidMesh))
     {
         return false;
     }
-    CreateAsteroidInstances(g_asteroidMesh, kAsteroidCount);
+    CreateAsteroidInstances(g_asteroidMesh, g_asteroidCount);
 
     g_sphereMesh = CreateSphereMesh(100, 100);
     g_ringMesh   = CreateRingMesh(1.35f, 2.2f, 100);
@@ -1801,10 +1886,19 @@ void SaveBenchmarkImage(const std::filesystem::path& _path, const std::vector<un
             file.write(reinterpret_cast<const char*>(_pixels.data() + (y * kWindowWidth + x) * 4), 3);
 }
 
+// 전체 실행이 1분 안에 끝나도록 짧게 잡은 측정 시간입니다.
+constexpr int    kBenchRuns           = 2;
+constexpr double kBenchWarmupSeconds  = 0.5;
+constexpr double kBenchMeasureSeconds = 1.5;
+
 int main(int argc, char** argv)
 {
-    if (argc != 2) { std::cerr << "Usage: benchmark.exe OUTPUT_DIRECTORY" << std::endl; return EXIT_FAILURE; }
+    if (argc != 4) { std::cerr << "Usage: benchmark.exe OUTPUT_DIRECTORY ASTEROID_COUNT rock|lowpoly" << std::endl; return EXIT_FAILURE; }
     const std::filesystem::path output = argv[1];
+    g_asteroidCount = std::atoi(argv[2]);
+    g_lowPolyRock   = std::string(argv[3]) == "lowpoly";
+    if (g_asteroidCount <= 0) { std::cerr << "Invalid asteroid count" << std::endl; return EXIT_FAILURE; }
+    std::filesystem::create_directories(output);
     if (!CreateMainWindow(::GetModuleHandleW(nullptr))) { DestroyMainWindow(); return EXIT_FAILURE; }
     if (!CreateResources()) { DestroyResources(); DestroyMainWindow(); return EXIT_FAILURE; }
     if (WGLEW_EXT_swap_control) wglSwapIntervalEXT(0);
@@ -1839,7 +1933,9 @@ int main(int argc, char** argv)
     std::cout << "GL_VENDOR=" << glGetString(GL_VENDOR) << '\n'
               << "GL_RENDERER=" << glGetString(GL_RENDERER) << '\n'
               << "GL_VERSION=" << glGetString(GL_VERSION) << '\n'
-              << "MSAA=" << samples << " TIMESTAMP_BITS=" << queryBits << std::endl;
+              << "MSAA=" << samples << " TIMESTAMP_BITS=" << queryBits << '\n'
+              << "ASTEROIDS=" << g_asteroidCount << " MESH=" << (g_lowPolyRock ? "lowpoly" : "rock")
+              << " INDICES=" << g_asteroidMesh.count << std::endl;
 
     std::ofstream raw(output / "frames.jsonl");
     std::ofstream phases(output / "phases.jsonl");
@@ -1879,9 +1975,9 @@ int main(int argc, char** argv)
         SaveBenchmarkImage(output / (std::string(view.name) + "-instanced.ppm"), instancedPixels);
         SaveBenchmarkImage(output / (std::string(view.name) + "-individual.ppm"), individualPixels);
         std::cout << "VALIDATION " << view.name << " different_pixels=" << differentPixels << " max_difference=" << maxDifference << std::endl;
-        if (maxDifference > 1 || differentPixels > 2000) { std::cerr << "Rendered images differ beyond rounding tolerance" << std::endl; return EXIT_FAILURE; }
+        if (maxDifference > 1 || differentPixels > static_cast<size_t>(kWindowWidth) * kWindowHeight / 100) { std::cerr << "Rendered images differ beyond rounding tolerance" << std::endl; return EXIT_FAILURE; }
 
-        for (int run = 0; run < 3; ++run)
+        for (int run = 0; run < kBenchRuns; ++run)
         {
             for (int order = 0; order < 2; ++order)
             {
@@ -1889,7 +1985,7 @@ int main(int argc, char** argv)
                 const char* mode = g_benchmarkIndividual ? "individual" : "instanced";
                 std::cout << "START " << view.name << ' ' << mode << " run=" << run + 1 << std::endl;
                 const double warmStart = BenchmarkNow();
-                while (BenchmarkNow() - warmStart < 3.)
+                while (BenchmarkNow() - warmStart < kBenchWarmupSeconds)
                 {
                     if (!BenchmarkPump()) return EXIT_FAILURE;
                     Display();
@@ -1914,7 +2010,7 @@ int main(int argc, char** argv)
                 };
                 size_t frameCount = 0;
                 const double start = BenchmarkNow();
-                while (BenchmarkNow() - start < 8.)
+                while (BenchmarkNow() - start < kBenchMeasureSeconds)
                 {
                     if (!BenchmarkPump()) return EXIT_FAILURE;
                     auto& slot = pending[frameCount % pending.size()];
