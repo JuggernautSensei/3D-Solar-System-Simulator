@@ -55,3 +55,6 @@ ipch/
 *.VC.VC.opendb
 vcpkg_installed/
 CMakeUserPresets.json
+
+## 벤치마크 원본 캡처 (용량이 커서 제외, 대표 이미지는 PNG로 보관)
+Docs/InstancingBenchmark/Results/**/*.ppm
