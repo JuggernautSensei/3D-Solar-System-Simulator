@@ -1,27 +1,24 @@
-<div align="center">
+<h1 align="center">3D Solar System Simulator</h1>
 
-# 3D Solar System Simulator
+<p align="center">C++20과 OpenGL로 만든 3D 태양계 시뮬레이션</p>
 
-**OpenGL로 구현한 3D 태양계 텀프로젝트**
-
-![C++20](https://img.shields.io/badge/C%2B%2B-20-00599C?logo=cplusplus&logoColor=white)
-![OpenGL](https://img.shields.io/badge/OpenGL-4.6%20Core-5586A4?logo=opengl&logoColor=white)
-![Windows](https://img.shields.io/badge/Platform-Windows-0078D4)
+<p align="center">
+  <img src="https://img.shields.io/badge/C++-20-00599C?logo=cplusplus&logoColor=white" alt="C++20">
+  <img src="https://img.shields.io/badge/OpenGL-4.6%20Core-5586A4?logo=opengl&logoColor=white" alt="OpenGL 4.6 Core">
+  <img src="https://img.shields.io/badge/Platform-Windows-0078D4" alt="Windows">
+</p>
 
 <p align="center"><img src="Docs/Hero.gif" alt="태양과 여덟 행성, 소행성대가 함께 움직이는 태양계 전체 화면" width="840"></p>
 
-</div>
-
 ## Contents
 
-- [프로젝트 소개](#프로젝트-소개)
-- [셰이더와 조명](#셰이더와-조명)
-- [깊이 처리와 블렌딩](#깊이-처리와-블렌딩)
-- [노멀 매핑](#노멀-매핑)
-- [인스턴싱](#인스턴싱)
-- [회고](#회고)
-
-<br>
+* [프로젝트 소개](#프로젝트-소개)
+* [변환과 텍스처링](#변환과-텍스처링)
+* [셰이더와 조명](#셰이더와-조명)
+* [깊이 처리와 블렌딩](#깊이-처리와-블렌딩)
+* [노멀 매핑](#노멀-매핑)
+* [인스턴싱](#인스턴싱)
+* [빌드 및 실행](#빌드-및-실행)
 
 ## 프로젝트 소개
 
@@ -31,7 +28,7 @@
 
 수업에서 배운 내용으로 기본 장면을 만든 뒤, 표면을 밝히는 셰이더 조명과 깊이 처리·블렌딩을 적용했습니다. 소행성대에는 표면의 작은 요철을 표현하는 노멀 매핑과, 같은 메시를 10만 개 그리는 인스턴싱을 사용했습니다. 구현은 [`main.cpp`](https://github.com/JuggernautSensei/3D-Solar-System-Simulator/blob/0a35574340bd9a171c0a023fb5215e7f9ac9faf1/main.cpp)에 모여 있습니다.
 
-### 변환과 텍스처링
+## 변환과 텍스처링
 
 행성은 위도와 경도를 나누어 만든 하나의 구 메시를 공유합니다. 이 구에 행성마다 다른 크기, 위치와 회전을 적용하고 표면 이미지를 입혔습니다. 구를 한 번만 만들어도 모델 행렬과 텍스처를 바꾸면 태양부터 해왕성까지 표현할 수 있습니다.
 
@@ -48,8 +45,6 @@ const Mat4 model = RotateZ(-planet.revolutionTilt)             // 궤도면 기�
 정점에는 오른쪽 행렬부터 적용됩니다. 구의 크기를 정하는 `Scale(radius)`는 이 모델 행렬 오른쪽에 곱합니다. 카메라의 뷰 행렬과 원근 투영 행렬까지 곱하면, 구의 로컬 좌표가 최종 화면을 그리는 데 필요한 좌표로 바뀝니다. 벡터와 행렬 연산, `LookAt()`과 `Perspective()`도 코드에 직접 구현했습니다.
 
 텍스처 좌표는 구를 만들 때 경도와 위도를 각각 U와 V에 대응시켰습니다. 경도 한 바퀴가 끝나는 지점은 위치가 같아도 U가 0인 정점과 1인 정점을 따로 둡니다. 그래야 텍스처의 양 끝이 만나는 이음매에서 좌표가 구의 반대편까지 보간되지 않습니다. 이미지는 stb_image로 읽고, 축소해서 볼 때는 밉맵과 트라이리니어 필터링을 사용합니다.
-
-<br>
 
 ## 셰이더와 조명
 
@@ -83,10 +78,6 @@ oColor        = vec4(albedo.rgb * (kAmbient + kSunlight * diffuse), albedo.a);
 ```
 
 표면이 빛을 정면으로 받으면 내적이 1에 가까워지고, 비스듬히 받으면 작아집니다. 빛의 반대편에서는 음수가 나오므로 0으로 제한합니다. 이것이 램버트 확산광입니다. 여기에 고정된 주변광을 더해 태양 반대쪽이 완전히 검게 사라지지 않게 했습니다. 태양 자체는 이 조명 계산을 거치지 않고 텍스처 색을 그대로 출력합니다.
-
-이 조명은 표면 방향에 따른 밝기만 계산합니다. 거리에 따른 빛의 감쇠, 정반사와 다른 물체가 만드는 그림자는 구현하지 않았습니다. 따라서 밝고 어두운 면의 구분은 표현하지만, 물리적으로 정확한 태양광을 재현하는 모델은 아닙니다.
-
-<br>
 
 ## 깊이 처리와 블렌딩
 
@@ -134,10 +125,6 @@ glBlendFunc(GL_SRC_ALPHA, GL_ONE);
 
 이 경우 기존 색은 그대로 두고 새 색에 알파를 곱한 값을 더합니다. 중심에서 멀어질수록 알파를 낮춰 빛이 옅어지게 했습니다. 같은 반투명 표현이라도 표면의 색을 섞는 고리와 빛을 더하는 광채에는 다른 블렌딩 식이 필요했습니다.
 
-현재 반투명 렌더링에는 한계가 있습니다. 행성 순서대로 그리면서 토성 고리도 깊이를 기록하고, 반투명 물체를 카메라에서 먼 순서로 정렬하지 않습니다. 따라서 고리 뒤쪽 물체가 나중에 그려지면 깊이 검사에서 탈락해 고리 너머로 보이지 않을 수 있습니다. 블렌딩 식을 설정하는 것에 더해 그리는 순서와 깊이 쓰기도 함께 다뤄야 하는 부분입니다.
-
-<br>
-
 ## 노멀 매핑
 
 소행성에는 외부 바위 모델을 사용했습니다. 행성처럼 매끈한 구와 달리 바위 표면에는 작은 요철이 있습니다. 이 요철을 모두 삼각형으로 만들면 메시가 복잡해지므로, 표면의 법선 방향을 텍스처에서 읽어 조명 계산에 사용하는 노멀 매핑을 적용했습니다.
@@ -172,8 +159,6 @@ vec3 normal = normalize(vTangentToWorld * (texture(uNormal, vTexCoord).xyz * 2.0
 
 이 법선을 사용하면 빛의 방향과 밝기를 계산하는 식은 앞의 램버트 조명과 같습니다. 표면 방향을 어디에서 가져오는지가 달라진 것입니다.
 
-<br>
-
 ## 인스턴싱
 
 <p align="center"><img src="Docs/AsteroidBelt.gif" alt="소행성 4,000개가 서로 다른 크기와 회전으로 공전하는 소행성대" width="840"></p>
@@ -182,26 +167,43 @@ vec3 normal = normalize(vTangentToWorld * (texture(uNormal, vTexCoord).xyz * 2.0
 
 ### 10만 개의 소행성대
 
-화성과 목성 사이의 소행성대를 표현하고 싶었습니다. 실제 소행성대에는 수많은 소행성이 있으므로, 현실적인 수치로 소행성 10만 개를 렌더링하는 것을 목표로 했습니다. 예제 화면에는 소행성이 가장 보기 좋게 표현되는 4,000개를 사용했습니다.
+화성과 목성 사이의 소행성대를 표현하고 싶었습니다. 실제 소행성대에는 수많은 소행성이 있으므로, 현실적인 수치로 소행성 10만 개를 렌더링하는 것을 목표로 했습니다. 예제 화면에는 소행성이 가장 보기 좋게 표현되는 4,000개를 사용했습니다. 소행성이 4,000개를 넘으면 정점 수가 적은 저폴리 바위로 바꿔 그립니다.
 
 모든 소행성은 같은 바위 메시와 색상·노멀 텍스처를 공유하고, 궤도와 자전, 크기만 다릅니다. [`CreateAsteroidInstances()`](main.cpp)에서 개체마다 다른 값을 세 개의 `vec4`로 만듭니다.
 
-| 속성 | 저장하는 값 |
-|---|---|
-| `aOrbit` | 궤도 반지름, 높이, 초기 공전 각도, 공전 각속도 |
-| `aSpin` | 자전축 xyz, 자전 각속도 |
-| `aScale` | 축별 크기 xyz, 초기 자전 각도 |
+<table width="100%">
+  <thead>
+    <tr>
+      <th align="left">속성</th>
+      <th align="left">저장하는 값</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>aOrbit</code></td>
+      <td>궤도 반지름, 높이, 초기 공전 각도, 공전 각속도</td>
+    </tr>
+    <tr>
+      <td><code>aSpin</code></td>
+      <td>자전축 xyz, 자전 각속도</td>
+    </tr>
+    <tr>
+      <td><code>aScale</code></td>
+      <td>축별 크기 xyz, 초기 자전 각도</td>
+    </tr>
+  </tbody>
+</table>
 
-### 너무 느리다
+### 인스턴싱 적용
 
-처음에는 소행성마다 값을 설정하고 `glDrawElements`를 한 번씩 호출했습니다. 그런데 10만 개를 그려 보니 **34 FPS**밖에 나오지 않았습니다. 다른 게임에서는 이보다 많은 물체도 부드럽게 그리는데 어떤 방법을 쓰는지 찾아보다 인스턴싱을 알게 됐습니다.
+처음에는 소행성마다 값을 설정하고 `glDrawElements`를 한 번씩 호출했습니다. 10만 개에서는 35 FPS였습니다.
 
 인스턴싱은 같은 메시를 여러 개 그릴 때, 개체마다 다른 값만 버퍼로 넘기고 드로우 명령 한 번으로 모든 개체를 그리는 방식입니다. 같은 바위를 반복하는 소행성대에 그대로 적용할 수 있었습니다.
 
 인스턴스 데이터 버퍼를 VAO의 바인딩 슬롯 1에 연결하고, divisor를 1로 설정했습니다. 그러면 이 슬롯의 속성은 정점마다가 아니라 인스턴스마다 다음 값으로 넘어갑니다.
 
 ```cpp
-glVertexArrayVertexBuffer(_mesh.vao, 1, g_asteroidInstanceBuffer, 0, 12 * sizeof(float));
+glVertexArrayVertexBuffer(_mesh.vao, 1, g_asteroidInstanceBuffer, 0, kAsteroidStride * static_cast<GLsizei>(sizeof(float)));
 glVertexArrayBindingDivisor(_mesh.vao, 1, 1);
 
 glDrawElementsInstanced(mesh.mode, mesh.count, GL_UNSIGNED_INT, nullptr, g_asteroidCount);
@@ -217,30 +219,105 @@ vec3  center   = vec3(aOrbit.x * cos(angle), aOrbit.y, -aOrbit.x * sin(angle));
 vWorldPosition = center + rotation * (aPosition * aScale.xyz);
 ```
 
-### 10만 개 비교
+### 성능 측정
 
-같은 장면에서 드로우 방식만 바꿔 소행성 10만 개를 그렸습니다. 앱에서 `4` 키로 10만 개를 고르고 `I` 키로 인스턴싱을 켜고 끌 수 있습니다.
+<p align="center"><img src="Docs/InstancingBenchmark/fps-by-count.png" alt="소행성 1,000개, 1만 개, 10만 개에서 개별 드로우와 인스턴싱의 FPS를 로그 눈금으로 비교한 막대 그래프" width="840"></p>
 
-| 소행성 10만 개 | 인스턴싱 없이 | 인스턴싱 |
-|---|---:|---:|
-| 드로우 호출 | 100,000회 | **1회** |
-| FPS | 34 | **380** |
-| 프레임 시간 | 29.3ms | **2.6ms** |
+같은 장면에서 드로우 방식만 바꿔 소행성 1,000개, 1만 개, 10만 개를 그렸습니다. 조건마다 0.5초 예열 뒤 1.5초를 측정했고, 두 방식의 순서를 바꿔 2회 반복했습니다. 1920×1080 해상도에서 VSync와 화면 표시를 제외한 렌더링 처리량입니다. 측정에 앞서 두 방식이 같은 프레임을 그리는지 픽셀을 비교했고, 채널 차이는 최대 1/255였습니다. 앱에서는 `4` 키로 10만 개를 고르고 `I` 키로 인스턴싱을 켜고 끌 수 있습니다.
 
-드로우 호출을 10만 번에서 1번으로 줄이자 **약 11배** 빨라졌습니다.
+<table width="100%">
+  <thead>
+    <tr>
+      <th align="left">소행성 10만 개</th>
+      <th align="right">개별 드로우</th>
+      <th align="right">인스턴싱</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>드로우 호출</td>
+      <td align="right">100,000회</td>
+      <td align="right">1회</td>
+    </tr>
+    <tr>
+      <td>FPS</td>
+      <td align="right">35.0</td>
+      <td align="right">333.4</td>
+    </tr>
+    <tr>
+      <td>CPU 제출 시간</td>
+      <td align="right">28.52 ms</td>
+      <td align="right">0.14 µs</td>
+    </tr>
+  </tbody>
+</table>
 
-### 인스턴싱은 왜 빠른가
+드로우 호출을 10만 번에서 1번으로 줄이자 35.0 FPS가 333.4 FPS(약 9.5배)가 됐습니다. 소행성이 1,000개일 때는 약 5.0배, 1만 개일 때는 약 8.7배로, 개수가 늘수록 차이가 커졌습니다. 측정 코드와 원본 결과는 [`Docs/InstancingBenchmark`](Docs/InstancingBenchmark)에 있습니다.
+
+### 드로우 호출 비용
 
 느린 원인은 그리는 양이 아니라 그리라고 명령하는 횟수였습니다. 드로우 호출 하나마다 CPU와 드라이버는 상태를 확인하고 명령을 만들어 GPU에 보내야 합니다. 소행성을 하나씩 그리면 이 작업을 프레임마다 10만 번 반복하고, 그동안 GPU는 다음 명령을 기다립니다. 실제로 10만 개를 따로 그릴 때 CPU가 명령을 보내는 데만 약 28ms가 걸렸습니다.
 
 인스턴싱은 개체가 몇 개든 명령을 한 번만 보냅니다. 개체마다 다른 값은 미리 GPU 메모리에 올려 두었으므로, GPU는 한 번 받은 명령으로 10만 개를 이어서 처리합니다. CPU는 명령을 기다리게 만드는 병목에서 빠지고, 프레임 시간은 GPU가 실제로 그리는 시간만큼으로 줄어듭니다.
 
-<br>
+## 빌드 및 실행
 
-## 회고
+Windows에서 C++20으로 빌드합니다. Visual Studio의 "C++를 사용한 데스크톱 개발" 워크로드가 필요하고, 프로젝트의 플랫폼 도구 집합이 `v145`로 지정되어 있어서 Visual Studio 2026을 기준으로 합니다. OpenGL 4.6을 지원하는 그래픽 드라이버가 필요합니다. 외부 라이브러리인 glew와 stb는 `vcpkg.json`으로 설치합니다.
 
-수업에서 배운 변환과 텍스처링을 실제로 움직이는 태양계에 적용하면서, 개별 연산이 한 장면 안에서 어떻게 연결되는지 확인할 수 있었습니다. 같은 구 메시도 변환을 합성하는 순서와 텍스처를 달리하면 서로 다른 행성이 됩니다. 공전과 자전을 함께 표현하는 과정은 행렬 곱셈을 화면의 움직임과 연결해 보는 기회였습니다.
+1. 저장소를 받습니다.
 
-그 위에 조명과 깊이 처리, 블렌딩을 더하면서 표면의 색과 방향, 물체의 가림 관계를 나누어 다뤘습니다. 특히 노멀 매핑에서는 텍스처에서 읽은 방향을 그대로 쓰는 것이 아니라, 빛의 방향과 같은 좌표 공간으로 옮겨야 조명을 계산할 수 있었습니다. 표면에 무늬를 입히는 텍스처링에서 출발해 표면의 방향까지 텍스처로 표현하는 데로 범위를 넓혔습니다.
+   ```powershell
+   git clone https://github.com/JuggernautSensei/3D-Solar-System-Simulator.git
+   ```
 
-소행성대를 그리면서 찾아 적용한 인스턴싱은 병목을 구분해 보는 계기가 됐습니다. 소행성 10만 개를 따로 그릴 때는 CPU가 드로우 명령을 제출하는 비용이 프레임 시간을 결정했고, 인스턴싱으로 명령을 한 번으로 줄이자 34 FPS가 380 FPS가 됐습니다. 같은 기법이라도 CPU와 GPU 중 어느 쪽이 병목인지에 따라 효과가 달라진다는 점을 측정으로 확인했습니다.
+2. `SolarSystem.sln`을 Visual Studio로 엽니다.
+3. 구성을 `Release | x64`로 두고 빌드한 뒤 실행합니다(`Ctrl+F5`).
+
+`Resources` 폴더는 빌드할 때 실행 파일 옆으로 복사됩니다. 마우스로 시점을, 키보드로 카메라 이동과 시간 진행 속도를 조작합니다.
+
+<table width="100%">
+  <thead>
+    <tr>
+      <th align="left">동작</th>
+      <th align="left">키</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>시점 회전</td>
+      <td>마우스</td>
+    </tr>
+    <tr>
+      <td>카메라 이동 (앞, 뒤, 왼쪽, 오른쪽, 아래, 위)</td>
+      <td>W, S, A, D, Q, E</td>
+    </tr>
+    <tr>
+      <td>카메라 이동 속도 줄이기, 늘리기</td>
+      <td>O, P</td>
+    </tr>
+    <tr>
+      <td>시간 진행 속도 늘리기, 줄이기</td>
+      <td>K, L</td>
+    </tr>
+    <tr>
+      <td>누르는 동안 시간 가속</td>
+      <td>Space</td>
+    </tr>
+    <tr>
+      <td>소행성 4,000개, 1만 개, 5만 개, 10만 개</td>
+      <td>1, 2, 3, 4</td>
+    </tr>
+    <tr>
+      <td>인스턴싱 켜기, 끄기</td>
+      <td>I</td>
+    </tr>
+    <tr>
+      <td>성능 표시 켜기, 끄기</td>
+      <td>H</td>
+    </tr>
+    <tr>
+      <td>종료</td>
+      <td>Esc</td>
+    </tr>
+  </tbody>
+</table>
