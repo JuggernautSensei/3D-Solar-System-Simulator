@@ -8,7 +8,7 @@
   <img src="https://img.shields.io/badge/Platform-Windows-0078D4" alt="Windows">
 </p>
 
-![태양과 여덟 행성, 소행성대가 함께 움직이는 태양계 전체 화면](Docs/Hero.gif)
+<p align="center"><img src="Docs/Hero.gif" alt="태양과 여덟 행성, 소행성대가 함께 움직이는 태양계 전체 화면"></p>
 
 ## Contents
 
